@@ -2,9 +2,22 @@
 # This file is used to track the info used to scaffold your project
 # and allow the plugins properly work.
 # More info: https://book.kubebuilder.io/reference/project-config.html
-domain: telemetry.datumapis.com
+domain: datumapis.com
 layout:
 - go.kubebuilder.io/v4
 projectName: telemetry-services-operator
 repo: go.datum.net/telemetry-services-operator
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: datumapis.com
+  group: telemetry
+  kind: Exporter
+  path: go.datum.net/telemetry-services-operator/api/v1alpha1
+  version: v1alpha1
+  webhooks:
+    defaulting: true
+    webhookVersion: v1
 version: "3"
