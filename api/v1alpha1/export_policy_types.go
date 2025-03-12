@@ -8,8 +8,8 @@ import (
 
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// ExporterSpec defines the desired state of Exporter.
-type ExporterSpec struct {
+// ExportPolicySpec defines the desired state of ExportPolicy.
+type ExportPolicySpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -22,11 +22,11 @@ type ExporterSpec struct {
 	// Configures how the exporter should send telemetry data to third-party
 	// telemetry platforms. Multiple sinks can be configured to export telemetry
 	// data to multiple platforms at the same time.
-	Sinks []TelemetrySink `json:"exporters"`
+	Sinks []TelemetrySink `json:"sinks"`
 }
 
-// ExporterStatus defines the observed state of Exporter.
-type ExporterStatus struct {
+// ExportPolicyStatus defines the observed state of ExportPolicy.
+type ExportPolicyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
@@ -45,30 +45,30 @@ type ExporterStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Exporter is the Schema for the exporters API.
-type Exporter struct {
+// ExportPolicy is the Schema for the exporters API.
+type ExportPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Describes the expected state of the Exporter's configuration. The control
+	// Describes the expected state of the ExportPolicy's configuration. The control
 	// plane will constantly evaluate the current state of the exporter that's
 	// deployed and ensure it matches the expected configuration. This field is
 	// required when configuring an exporter.
-	Spec ExporterSpec `json:"spec"`
+	Spec ExportPolicySpec `json:"spec"`
 
 	// Provides information on the current state of the exporter that was observed
 	// by the control plane. This will be continuously updated as the control
 	// plane monitors the exporter.
-	Status ExporterStatus `json:"status,omitempty"`
+	Status ExportPolicyStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// ExporterList contains a list of Exporter.
-type ExporterList struct {
+// ExportPolicyList contains a list of ExportPolicy.
+type ExportPolicyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Exporter `json:"items"`
+	Items           []ExportPolicy `json:"items"`
 }
 
 // A metric source configures the metric data that should be exported to the
@@ -122,7 +122,7 @@ type TelemetrySink struct {
 	// OTLP protocol.
 	//
 	// See: https://opentelemetry.io/docs/specs/otel/protocol/
-	OtlpHTTP OtlpHTTP `json:"otlp_http,omitempty"`
+	OpenTelemetry OpenTelemetrySink `json:"otlp_http,omitempty"`
 }
 
 // References a secret in the same namespace as the entity defining the
@@ -160,12 +160,19 @@ type Authentication struct {
 }
 
 // Configures how the sink should send data to a OTLP HTTP endpoint.
-type OtlpHTTP struct {
-	// The HTTP endpoint that should be used to publish telemetry data.
-	Endpoint string `json:"endpoint"`
-
+type OpenTelemetrySink struct {
 	// Configures how the sink should authenticate with the HTTP endpoint.
 	Authentication Authentication `json:"authentication,omitempty"`
+
+	// Configure an HTTP endpoint to use for publishing telemetry data.
+	HTTP OpenTelemetryHTTP `json:"http,omitempty"`
+}
+
+// Configures the OpenTelemetry sink to use an HTTP endpoint to send telemetry
+// data.
+type OpenTelemetryHTTP struct {
+	// The HTTP endpoint that should be used to publish telemetry data.
+	Endpoint string
 }
 
 // Configures the batching behavior the sink will use to batch requests before
@@ -211,5 +218,5 @@ type SinkStatus struct {
 }
 
 func init() {
-	SchemeBuilder.Register(&Exporter{}, &ExporterList{})
+	SchemeBuilder.Register(&ExportPolicy{}, &ExportPolicyList{})
 }

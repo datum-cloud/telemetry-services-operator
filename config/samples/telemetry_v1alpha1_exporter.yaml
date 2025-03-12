@@ -1,5 +1,5 @@
 apiVersion: telemetry.datumapis.com/v1alpha1
-kind: Exporter
+kind: ExportPolicy
 metadata:
   labels:
     app.kubernetes.io/name: telemetry-services-operator

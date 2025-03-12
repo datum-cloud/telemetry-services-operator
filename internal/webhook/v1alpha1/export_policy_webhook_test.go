@@ -10,17 +10,17 @@ import (
 	// TODO (user): Add any additional imports if needed
 )
 
-var _ = Describe("Exporter Webhook", func() {
+var _ = Describe("ExportPolicy Webhook", func() {
 	var (
-		obj       *telemetryv1alpha1.Exporter
-		oldObj    *telemetryv1alpha1.Exporter
-		defaulter ExporterCustomDefaulter
+		obj       *telemetryv1alpha1.ExportPolicy
+		oldObj    *telemetryv1alpha1.ExportPolicy
+		defaulter ExportPolicyCustomDefaulter
 	)
 
 	BeforeEach(func() {
-		obj = &telemetryv1alpha1.Exporter{}
-		oldObj = &telemetryv1alpha1.Exporter{}
-		defaulter = ExporterCustomDefaulter{}
+		obj = &telemetryv1alpha1.ExportPolicy{}
+		oldObj = &telemetryv1alpha1.ExportPolicy{}
+		defaulter = ExportPolicyCustomDefaulter{}
 		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
 		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
@@ -31,7 +31,7 @@ var _ = Describe("Exporter Webhook", func() {
 		// TODO (user): Add any teardown logic common to all tests
 	})
 
-	Context("When creating Exporter under Defaulting Webhook", func() {
+	Context("When creating ExportPolicy under Defaulting Webhook", func() {
 		// TODO (user): Add logic for defaulting webhooks
 		// Example:
 		// It("Should apply defaults when a required field is empty", func() {

@@ -16,7 +16,7 @@ import (
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 )
 
-var _ = Describe("Exporter Controller", func() {
+var _ = Describe("ExportPolicy Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
 
@@ -26,18 +26,18 @@ var _ = Describe("Exporter Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		exporter := &telemetryv1alpha1.Exporter{}
+		exporter := &telemetryv1alpha1.ExportPolicy{}
 
 		BeforeEach(func() {
-			By("creating the custom resource for the Kind Exporter")
+			By("creating the custom resource for the Kind ExportPolicy")
 			err := k8sClient.Get(ctx, typeNamespacedName, exporter)
 			if err != nil && errors.IsNotFound(err) {
-				resource := &telemetryv1alpha1.Exporter{
+				resource := &telemetryv1alpha1.ExportPolicy{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
 						Namespace: "default",
 					},
-					Spec: telemetryv1alpha1.ExporterSpec{
+					Spec: telemetryv1alpha1.ExportPolicySpec{
 						Sources: []telemetryv1alpha1.TelemetrySource{
 							{
 								Name: "metrics",
@@ -48,8 +48,10 @@ var _ = Describe("Exporter Controller", func() {
 						},
 						Sinks: []telemetryv1alpha1.TelemetrySink{{
 							Name: "grafana-cloud",
-							OtlpHTTP: telemetryv1alpha1.OtlpHTTP{
-								Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
+							OpenTelemetry: telemetryv1alpha1.OpenTelemetrySink{
+								HTTP: telemetryv1alpha1.OpenTelemetryHTTP{
+									Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
+								},
 								Authentication: telemetryv1alpha1.Authentication{
 									BearerToken: telemetryv1alpha1.BearerTokenAuthentication{
 										SecretRef: telemetryv1alpha1.LocalSecretReference{
@@ -68,16 +70,16 @@ var _ = Describe("Exporter Controller", func() {
 
 		AfterEach(func() {
 			// TODO(user): Cleanup logic after each test, like removing the resource instance.
-			resource := &telemetryv1alpha1.Exporter{}
+			resource := &telemetryv1alpha1.ExportPolicy{}
 			err := k8sClient.Get(ctx, typeNamespacedName, resource)
 			Expect(err).NotTo(HaveOccurred())
 
-			By("Cleanup the specific resource instance Exporter")
+			By("Cleanup the specific resource instance ExportPolicy")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			controllerReconciler := &ExporterReconciler{
+			controllerReconciler := &ExportPolicyReconciler{
 				Client: k8sClient,
 				Scheme: k8sClient.Scheme(),
 			}

@@ -203,17 +203,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&controller.ExporterReconciler{
+	if err = (&controller.ExportPolicyReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "unable to create controller", "controller", "Exporter")
+		setupLog.Error(err, "unable to create controller", "controller", "ExportPolicy")
 		os.Exit(1)
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = webhooktelemetryv1alpha1.SetupExporterWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "Exporter")
+		if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
 			os.Exit(1)
 		}
 	}
