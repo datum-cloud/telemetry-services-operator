@@ -41,19 +41,19 @@ var _ = Describe("ExportPolicy Controller", func() {
 						Sources: []telemetryv1alpha1.TelemetrySource{
 							{
 								Name: "metrics",
-								Metrics: telemetryv1alpha1.MetricSource{
+								Metrics: &telemetryv1alpha1.MetricSource{
 									Metricsql: `{service_name="gateway.networking.k8s.io", resource_type="gateways"}`,
 								},
 							},
 						},
-						Sinks: []telemetryv1alpha1.TelemetrySink{{
+						Sink: telemetryv1alpha1.TelemetrySink{
 							Name: "grafana-cloud",
-							OpenTelemetry: telemetryv1alpha1.OpenTelemetrySink{
-								HTTP: telemetryv1alpha1.OpenTelemetryHTTP{
+							OpenTelemetry: &telemetryv1alpha1.OpenTelemetrySink{
+								HTTP: &telemetryv1alpha1.OpenTelemetryHTTP{
 									Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
 								},
 								Authentication: telemetryv1alpha1.Authentication{
-									BearerToken: telemetryv1alpha1.BearerTokenAuthentication{
+									BearerToken: &telemetryv1alpha1.BearerTokenAuthentication{
 										SecretRef: telemetryv1alpha1.LocalSecretReference{
 											Name: "grafana-push-api-token",
 											Key:  "token",
@@ -61,7 +61,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 									},
 								},
 							},
-						}},
+						},
 					},
 				}
 				Expect(k8sClient.Create(ctx, resource)).To(Succeed())

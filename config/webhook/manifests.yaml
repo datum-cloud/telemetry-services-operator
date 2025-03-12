@@ -10,9 +10,9 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-telemetry-datumapis-com-v1alpha1-exporter
+      path: /mutate-telemetry-datumapis-com-v1alpha1-exportpolicy
   failurePolicy: Fail
-  name: mexporter-v1alpha1.kb.io
+  name: mexportpolicy-v1alpha1.kb.io
   rules:
   - apiGroups:
     - telemetry.datumapis.com
@@ -22,5 +22,31 @@ webhooks:
     - CREATE
     - UPDATE
     resources:
-    - exporters
+    - exportpolicies
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: system
+      path: /validate-telemetry-datumapis-com-v1alpha1-exportpolicy
+  failurePolicy: Fail
+  name: vexportpolicy-v1alpha1.kb.io
+  rules:
+  - apiGroups:
+    - telemetry.datumapis.com
+    apiVersions:
+    - v1alpha1
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - exportpolicies
   sideEffects: None

@@ -20,9 +20,8 @@ type ExportPolicySpec struct {
 	Sources []TelemetrySource `json:"sources"`
 
 	// Configures how the exporter should send telemetry data to third-party
-	// telemetry platforms. Multiple sinks can be configured to export telemetry
-	// data to multiple platforms at the same time.
-	Sinks []TelemetrySink `json:"sinks"`
+	// telemetry platforms.
+	Sink TelemetrySink `json:"sink"`
 }
 
 // ExportPolicyStatus defines the observed state of ExportPolicy.
@@ -36,10 +35,6 @@ type ExportPolicyStatus struct {
 	//
 	// Known condition types are: "Ready"
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-
-	// Provides status information on each sink that's configured to export
-	// telemetry data. A sink status will exist for every sink configured.
-	Sinks []SinkStatus `json:"sinks,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -98,7 +93,7 @@ type TelemetrySource struct {
 
 	// Configures how the telemetry source should retrieve metric data from the
 	// Datum Cloud platform.
-	Metrics MetricSource `json:"metrics,omitempty"`
+	Metrics *MetricSource `json:"metrics,omitempty"`
 }
 
 // Configures how telemetry data should be sent to a third-party platform. As of
@@ -122,7 +117,7 @@ type TelemetrySink struct {
 	// OTLP protocol.
 	//
 	// See: https://opentelemetry.io/docs/specs/otel/protocol/
-	OpenTelemetry OpenTelemetrySink `json:"otlp_http,omitempty"`
+	OpenTelemetry *OpenTelemetrySink `json:"otlp_http,omitempty"`
 }
 
 // References a secret in the same namespace as the entity defining the
@@ -156,7 +151,7 @@ type BearerTokenAuthentication struct {
 type Authentication struct {
 	// Configures the sink to use a Bearer token in the authorization header when
 	// authenticating with the configured endpoint.
-	BearerToken BearerTokenAuthentication `json:"bearerToken,omitempty"`
+	BearerToken *BearerTokenAuthentication `json:"bearerToken,omitempty"`
 }
 
 // Configures how the sink should send data to a OTLP HTTP endpoint.
@@ -165,14 +160,14 @@ type OpenTelemetrySink struct {
 	Authentication Authentication `json:"authentication,omitempty"`
 
 	// Configure an HTTP endpoint to use for publishing telemetry data.
-	HTTP OpenTelemetryHTTP `json:"http,omitempty"`
+	HTTP *OpenTelemetryHTTP `json:"http,omitempty"`
 }
 
 // Configures the OpenTelemetry sink to use an HTTP endpoint to send telemetry
 // data.
 type OpenTelemetryHTTP struct {
 	// The HTTP endpoint that should be used to publish telemetry data.
-	Endpoint string
+	Endpoint string `json:"endpoint"`
 }
 
 // Configures the batching behavior the sink will use to batch requests before
