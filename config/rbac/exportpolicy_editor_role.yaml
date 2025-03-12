@@ -1,9 +1,9 @@
 # This rule is not used by the project telemetry-services-operator itself.
 # It is provided to allow the cluster admin to help manage permissions for users.
 #
-# Grants read-only access to telemetry.datumapis.com resources.
-# This role is intended for users who need visibility into these resources
-# without permissions to modify them. It is ideal for monitoring purposes and limited-access viewing.
+# Grants permissions to create, update, and delete resources within the telemetry.datumapis.com.
+# This role is intended for users who need to manage these resources
+# but should not control RBAC or manage permissions for others.
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -11,19 +11,23 @@ metadata:
   labels:
     app.kubernetes.io/name: telemetry-services-operator
     app.kubernetes.io/managed-by: kustomize
-  name: exporter-viewer-role
+  name: exportpolicy-editor-role
 rules:
 - apiGroups:
   - telemetry.datumapis.com
   resources:
-  - exporters
+  - exportpolicies
   verbs:
+  - create
+  - delete
   - get
   - list
+  - patch
+  - update
   - watch
 - apiGroups:
   - telemetry.datumapis.com
   resources:
-  - exporters/status
+  - exportpolicies/status
   verbs:
   - get

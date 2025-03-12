@@ -7,7 +7,7 @@ rules:
 - apiGroups:
   - telemetry.datumapis.com
   resources:
-  - exporters
+  - exportpolicies
   verbs:
   - create
   - delete
@@ -19,13 +19,13 @@ rules:
 - apiGroups:
   - telemetry.datumapis.com
   resources:
-  - exporters/finalizers
+  - exportpolicies/finalizers
   verbs:
   - update
 - apiGroups:
   - telemetry.datumapis.com
   resources:
-  - exporters/status
+  - exportpolicies/status
   verbs:
   - get
   - patch

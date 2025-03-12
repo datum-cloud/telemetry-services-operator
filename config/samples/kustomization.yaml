@@ -1,4 +1,4 @@
 ## Append samples of your project ##
 resources:
-- telemetry_v1alpha1_exporter.yaml
+- telemetry_v1alpha1_exportpolicy.yaml
 # +kubebuilder:scaffold:manifestskustomizesamples

@@ -26,11 +26,11 @@ var _ = Describe("ExportPolicy Controller", func() {
 			Name:      resourceName,
 			Namespace: "default", // TODO(user):Modify as needed
 		}
-		exporter := &telemetryv1alpha1.ExportPolicy{}
+		exportpolicy := &telemetryv1alpha1.ExportPolicy{}
 
 		BeforeEach(func() {
 			By("creating the custom resource for the Kind ExportPolicy")
-			err := k8sClient.Get(ctx, typeNamespacedName, exporter)
+			err := k8sClient.Get(ctx, typeNamespacedName, exportpolicy)
 			if err != nil && errors.IsNotFound(err) {
 				resource := &telemetryv1alpha1.ExportPolicy{
 					ObjectMeta: metav1.ObjectMeta{

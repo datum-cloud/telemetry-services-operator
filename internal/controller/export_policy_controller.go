@@ -19,9 +19,9 @@ type ExportPolicyReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exporters,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exporters/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exporters/finalizers,verbs=update
+// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies/finalizers,verbs=update
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -44,6 +44,6 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 func (r *ExportPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&telemetryv1alpha1.ExportPolicy{}).
-		Named("exporter").
+		Named("exportpolicy").
 		Complete(r)
 }

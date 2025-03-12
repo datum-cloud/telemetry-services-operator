@@ -6,21 +6,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
+// NOTE: json tags are required.  Any new fields you add must have json tags for
+// the fields to be serialized.
 
 // ExportPolicySpec defines the desired state of ExportPolicy.
 type ExportPolicySpec struct {
-	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster Important: Run
+	// "make" to regenerate code after modifying this file
 
-	// Defines how the exporter should source telemetry data to publish to the
-	// configured sinks. An exporter can define multiple telemetry sources. The
-	// exporter will **not** de-duplicate telemetry data that matches multiple
-	// sources.
+	// Defines how the export policy should source telemetry data to publish to
+	// the configured sinks. An export policy can define multiple telemetry
+	// sources. The export policy will **not** de-duplicate telemetry data that
+	// matches multiple sources.
 	Sources []TelemetrySource `json:"sources"`
 
-	// Configures how the exporter should send telemetry data to third-party
-	// telemetry platforms.
+	// Configures how telemetry data should be sent to a third-party telemetry
+	// platforms.
 	Sink TelemetrySink `json:"sink"`
 }
 
@@ -29,9 +30,9 @@ type ExportPolicyStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Provides a summary of the conditions for the exporter as a whole. This may
-	// be based on other conditions available on the exporter. See the sink
-	// conditions for more information on each sink.
+	// Provides status information on the current status of the sink. This can be
+	// used to determine whether a sink is configured correctly and is exporting
+	// telemetry data.
 	//
 	// Known condition types are: "Ready"
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
@@ -40,20 +41,20 @@ type ExportPolicyStatus struct {
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// ExportPolicy is the Schema for the exporters API.
+// ExportPolicy is the Schema for the export policy API.
 type ExportPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	// Describes the expected state of the ExportPolicy's configuration. The control
-	// plane will constantly evaluate the current state of the exporter that's
-	// deployed and ensure it matches the expected configuration. This field is
-	// required when configuring an exporter.
+	// Describes the expected state of the ExportPolicy's configuration. The
+	// control plane will constantly evaluate the current state of exporters that
+	// are deployed and ensure it matches the expected configuration. This field
+	// is required when configuring an export policy.
 	Spec ExportPolicySpec `json:"spec"`
 
-	// Provides information on the current state of the exporter that was observed
-	// by the control plane. This will be continuously updated as the control
-	// plane monitors the exporter.
+	// Provides information on the current state of the export policy that was
+	// observed by the control plane. This will be continuously updated as the
+	// control plane monitors exporters.
 	Status ExportPolicyStatus `json:"status,omitempty"`
 }
 
@@ -71,24 +72,21 @@ type ExportPolicyList struct {
 type MetricSource struct {
 	// The MetricSQL option allows to user to provide a metricsql query that can
 	// be used to select and filter metric data that should be published by the
-	// exporter.
+	// export policy.
 	//
-	// Here's an example of a metricsql query that will publish gateway metrics
-	// from the exporter:
+	// Here's an example of a metricsql query that will publish gateway metrics:
 	//
-	// ```
-	// {service_name=“networking.datumapis.com”, resource_kind="Gateway"}
-	// ```
+	// ``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
 	//
 	// See: https://docs.victoriametrics.com/metricsql/
 	Metricsql string `json:"metricsql,omitempty"`
 }
 
-// Defines how the exporter should source telemetry data from resources on the
-// platform.
+// Defines how the export policy should source telemetry data from resources on
+// the platform.
 type TelemetrySource struct {
-	// A unique name given to the telemetry source within an exporter. Must be a
-	// valid DNS label.
+	// A unique name given to the telemetry source within an export policy. Must
+	// be a valid DNS label.
 	Name string `json:"name"`
 
 	// Configures how the telemetry source should retrieve metric data from the
@@ -100,21 +98,17 @@ type TelemetrySource struct {
 // now there are no guarantees around delivery of telemetry data, especially if
 // the sink's endpoint is unavailable.
 type TelemetrySink struct {
-	// A name given to the telemetry source that's unique within the exporter.
-	// Must be a valid DNS label.
-	Name string `json:"name"`
-
-	// Configures how the exporter should batch telemetry data before sending to
-	// the sink.
+	// Configures how telemetry data should be batched before sending to the sink.
 	Batch Batch `json:"batch,omitempty"`
 
-	// Configures the exporter's retry behavior when it fails to send requests to
-	// the sink's endpoint. There's no guarantees that the exporter will retry
-	// until success if the endpoint is not available or configured incorrectly.
+	// Configures the export policies' retry behavior when it fails to send
+	// requests to the sink's endpoint. There's no guarantees that the export
+	// policy will retry until success if the endpoint is not available or
+	// configured incorrectly.
 	Retry Retry `json:"retry,omitempty"`
 
-	// Configures the exporter to publish telemetry using the HTTP version of the
-	// OTLP protocol.
+	// Configures the export policy to publish telemetry using the HTTP version of
+	// the OTLP protocol.
 	//
 	// See: https://opentelemetry.io/docs/specs/otel/protocol/
 	OpenTelemetry *OpenTelemetrySink `json:"otlp_http,omitempty"`
@@ -137,9 +131,7 @@ type LocalSecretReference struct {
 // with a sink's endpoint. This should be used when the endpoint requires an
 // Authorization header in the following format:
 //
-// ```
-// Authorization: Bearer ...
-// ```
+// ``` Authorization: Bearer ... ```
 type BearerTokenAuthentication struct {
 	// Configures which secret is used to retrieve the bearer token to add to the
 	// authorization header.
@@ -195,21 +187,6 @@ type Retry struct {
 	//
 	// +kubebuilder:default="5s"
 	BackoffDuration string `json:"backoffDuration"`
-}
-
-// Provides status information on a sink configuration within an exporter. This
-// can be used to determine whether the sink is correctly configured and sending
-// telemetry data.
-type SinkStatus struct {
-	// This matches the name of the sink in the exporter's configuration.
-	Name string `json:"name,omitempty"`
-
-	// Provides status information on the current status of the sink. This can be
-	// used to determine whether a sink is configured correctly and is exporting
-	// telemetry data.
-	//
-	// Known condition types are: "Ready"
-	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
 
 func init() {
