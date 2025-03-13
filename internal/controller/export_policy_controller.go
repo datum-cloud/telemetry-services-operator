@@ -6,10 +6,12 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/finalizer"
@@ -67,10 +69,48 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	apimeta.SetStatusCondition(&exportPolicy.Status.Conditions, v1.Condition{
-		Type:   "Ready",
-		Status: v1.ConditionTrue,
-	})
+	var statusChanged bool
+	if exportPolicy.Spec.Sink.OpenTelemetry != nil {
+		// Check that the secret configured for the endpoint exists in the cluster
+		secretRef := exportPolicy.Spec.Sink.OpenTelemetry.Authentication.BearerToken.SecretRef
+		secret := &corev1.Secret{}
+		err := r.Client.Get(ctx, types.NamespacedName{
+			Name:      secretRef.Name,
+			Namespace: exportPolicy.Namespace,
+		}, secret)
+		if errors.IsNotFound(err) {
+			statusChanged = apimeta.SetStatusCondition(&exportPolicy.Status.Conditions, v1.Condition{
+				Type:               "Ready",
+				Status:             v1.ConditionFalse,
+				Reason:             "SecretNotFound",
+				ObservedGeneration: exportPolicy.Generation,
+				Message:            fmt.Sprintf("The configured secret `%s` was not found", secretRef.Name),
+			})
+		} else if err != nil {
+			statusChanged = apimeta.SetStatusCondition(&exportPolicy.Status.Conditions, v1.Condition{
+				Type:               "Ready",
+				Status:             v1.ConditionFalse,
+				Reason:             "SecretNotFound",
+				ObservedGeneration: exportPolicy.Generation,
+				Message:            fmt.Sprintf("Failed to check if the secret '%s' exists", secretRef.Name),
+			})
+			logger.Error(err, "failed to check if secret exists")
+		} else if _, exists := secret.Data[secretRef.Key]; !exists {
+			statusChanged = apimeta.SetStatusCondition(&exportPolicy.Status.Conditions, v1.Condition{
+				Type:               "Ready",
+				Status:             v1.ConditionFalse,
+				Reason:             "SecretNotFound",
+				ObservedGeneration: exportPolicy.Generation,
+				Message:            fmt.Sprintf("Key `%s` does not exist in secret `%s`", secretRef.Key, secretRef.Name),
+			})
+		}
+	}
+
+	if statusChanged {
+		if err := r.Client.Status().Update(ctx, &exportPolicy); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	return ctrl.Result{}, nil
 }

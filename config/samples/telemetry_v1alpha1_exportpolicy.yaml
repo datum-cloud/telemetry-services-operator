@@ -20,7 +20,7 @@ spec:
         # familiar with using metricsql queries to select metric data from
         # Victoria Metrics.
         metricsql: |
-          {service_name="networking.datumapis.com", resource_kind="Gateway", __name__=~"network_bytes_.*"}
+          {service_name="networking.datumapis.com", resource_kind="Gateway" __name__=~"network_bytes_.*"}
   sink:
     openTelemetry:
       http:
