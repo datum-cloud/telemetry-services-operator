@@ -111,7 +111,7 @@ type TelemetrySink struct {
 	// the OTLP protocol.
 	//
 	// See: https://opentelemetry.io/docs/specs/otel/protocol/
-	OpenTelemetry *OpenTelemetrySink `json:"otlp_http,omitempty"`
+	OpenTelemetry *OpenTelemetrySink `json:"openTelemetry,omitempty"`
 }
 
 // References a secret in the same namespace as the entity defining the

@@ -47,7 +47,6 @@ var _ = Describe("ExportPolicy Controller", func() {
 							},
 						},
 						Sink: telemetryv1alpha1.TelemetrySink{
-							Name: "grafana-cloud",
 							OpenTelemetry: &telemetryv1alpha1.OpenTelemetrySink{
 								HTTP: &telemetryv1alpha1.OpenTelemetryHTTP{
 									Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
