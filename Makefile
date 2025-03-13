@@ -99,7 +99,7 @@ build: manifests generate fmt vet ## Build manager binary.
 
 .PHONY: run
 run: manifests generate fmt vet ## Run a controller from your host.
-	go run ./cmd/main.go
+	TMPDIR=$(LOCALBIN)/tmp go run ./cmd/main.go
 
 # If you wish to build the manager image targeting other platforms you can use the --platform flag.
 # (i.e. docker build --platform linux/arm64). However, you must enable docker buildKit for it.
@@ -143,7 +143,13 @@ endif
 
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
-	$(KUSTOMIZE) build config/crd | $(KUBECTL) apply -f -
+	$(KUSTOMIZE) build config/dev | $(KUBECTL) apply -f -
+	$(KUBECTL) wait --for=condition=Ready -n kube-system certificate/telemetry-services-operator-serving-cert
+	mkdir -p $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs
+	$(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
+		| jq -r '.data["tls.crt"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.crt
+	$(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
+		| jq -r '.data["tls.key"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.key
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
