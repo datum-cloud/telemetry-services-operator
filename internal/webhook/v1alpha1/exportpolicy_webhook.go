@@ -5,9 +5,12 @@ package v1alpha1
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
+	"time"
 
 	"github.com/VictoriaMetrics/metricsql"
+	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -105,6 +108,10 @@ func (v *ExportPolicyCustomValidator) ValidateCreate(ctx context.Context, obj ru
 	}
 	exportpolicylog.Info("Validation for ExportPolicy upon creation", "name", exportpolicy.GetName())
 
+	if errs := validateExportPolicy(exportpolicy); len(errs) > 0 {
+		return nil, errors.NewInvalid(obj.GetObjectKind().GroupVersionKind().GroupKind(), exportpolicy.Name, errs)
+	}
+
 	return nil, nil
 }
 
@@ -116,7 +123,9 @@ func (v *ExportPolicyCustomValidator) ValidateUpdate(ctx context.Context, oldObj
 	}
 	exportpolicylog.Info("Validation for ExportPolicy upon update", "name", exportpolicy.GetName())
 
-	// TODO(user): fill in your validation logic upon object update.
+	if errs := validateExportPolicy(exportpolicy); len(errs) > 0 {
+		return nil, errors.NewInvalid(newObj.GetObjectKind().GroupVersionKind().GroupKind(), exportpolicy.Name, errs)
+	}
 
 	return nil, nil
 }
@@ -162,6 +171,9 @@ func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicyS
 			}
 		}
 	}
+
+	errs = append(errs, validateTelemetrySink(fieldPath.Child("sink"), spec.Sink)...)
+
 	return errs
 }
 
@@ -186,5 +198,48 @@ func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field
 		}
 	}
 
+	return errs
+}
+
+func validateTelemetrySink(path *field.Path, sink v1alpha1.TelemetrySink) field.ErrorList {
+	var errs field.ErrorList
+	if sink.OpenTelemetry == nil {
+		errs = append(errs, field.Required(path.Child("openTelemetry"), ""))
+	} else {
+		errs = append(errs, validateOpenTelemetrySink(path.Child("openTelemetry"), *sink.OpenTelemetry)...)
+	}
+
+	batchPath := path.Child("batch")
+	if sink.Batch.MaxSize > 1000 || sink.Batch.MaxSize < 1 {
+		errs = append(errs, field.Invalid(batchPath.Child("maxSize"), sink.Batch.MaxSize, "must be between 1 and 1000"))
+	}
+	if timeout, err := time.ParseDuration(sink.Batch.Timeout); err != nil {
+		errs = append(errs, field.Invalid(batchPath.Child("timeout"), sink.Batch.Timeout, "must be a valid duration string (e.g. '5s')"))
+	} else if timeout > 10*time.Second || timeout < time.Second {
+		errs = append(errs, field.Invalid(batchPath.Child("timeout"), sink.Batch.Timeout, "must be between 1s and 10s"))
+	}
+
+	retryPath := path.Child("retry")
+	if sink.Retry.MaxAttempts > 5 || sink.Retry.MaxAttempts < 1 {
+		errs = append(errs, field.Invalid(retryPath.Child("maxAttempts"), sink.Retry.MaxAttempts, "must be between 1 and 5"))
+	}
+	if backoffDuration, err := time.ParseDuration(sink.Retry.BackoffDuration); err != nil {
+		errs = append(errs, field.Invalid(retryPath.Child("backoffDuration"), sink.Retry.BackoffDuration, "must be a valid duration string (e.g. '5s')"))
+	} else if backoffDuration > 10*time.Second || backoffDuration < time.Second {
+		errs = append(errs, field.Invalid(retryPath.Child("backoffDuration"), sink.Retry.BackoffDuration, "must be between 1s and 10s"))
+	}
+
+	return errs
+}
+
+func validateOpenTelemetrySink(path *field.Path, otel v1alpha1.OpenTelemetrySink) field.ErrorList {
+	var errs field.ErrorList
+	if otel.HTTP == nil {
+		errs = append(errs, field.Required(path.Child("http"), "A HTTP endpoint configuration is required. Additional endpoint types will be supported in the future."))
+	} else if otel.HTTP.Endpoint == "" {
+		errs = append(errs, field.Required(path.Child("http").Child("endpoint"), "A valid endpoint URL is required"))
+	} else if _, err := url.Parse(otel.HTTP.Endpoint); err != nil {
+		errs = append(errs, field.Invalid(path.Child("http").Child("endpoint"), otel.HTTP.Endpoint, fmt.Sprintf("Failed to parse URL: %s", err)))
+	}
 	return errs
 }
