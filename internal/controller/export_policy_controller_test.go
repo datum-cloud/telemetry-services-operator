@@ -46,16 +46,15 @@ var _ = Describe("ExportPolicy Controller", func() {
 								},
 							},
 						},
-						Sink: telemetryv1alpha1.TelemetrySink{
-							OpenTelemetry: &telemetryv1alpha1.OpenTelemetrySink{
-								HTTP: &telemetryv1alpha1.OpenTelemetryHTTP{
+						Sinks: []telemetryv1alpha1.TelemetrySink{
+							{
+								PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
 									Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
-								},
-								Authentication: telemetryv1alpha1.Authentication{
-									BearerToken: &telemetryv1alpha1.BearerTokenAuthentication{
-										SecretRef: telemetryv1alpha1.LocalSecretReference{
-											Name: "grafana-push-api-token",
-											Key:  "token",
+									Authentication: &telemetryv1alpha1.Authentication{
+										BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
+											SecretRef: telemetryv1alpha1.LocalSecretReference{
+												Name: "grafana-push-api-token",
+											},
 										},
 									},
 								},

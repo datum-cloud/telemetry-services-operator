@@ -3,6 +3,7 @@
 package v1alpha1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -22,14 +23,28 @@ type ExportPolicySpec struct {
 
 	// Configures how telemetry data should be sent to a third-party telemetry
 	// platforms.
-	Sink TelemetrySink `json:"sink"`
+	Sinks []TelemetrySink `json:"sinks"`
 }
 
 // ExportPolicyStatus defines the observed state of ExportPolicy.
 type ExportPolicyStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
+	// Provides summary status information on the export policy as a whole. Review
+	// the sink status information for detailed information on each sink.
+	//
+	// Known condition types are: "Ready"
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
 
+	// Provides status information on each sink that's configured.
+	Sinks []SinkStatus `json:"sinks,omitempty"`
+}
+
+// SinkStatus provides status information on the current status of a sink. This
+// can be used to determine whether a sink is configured correctly and is
+// exporting telemetry data.
+type SinkStatus struct {
+	// The name of the corresponding sink configuration in the spec of the export
+	// policy.
+	Name string `json:"name"`
 	// Provides status information on the current status of the sink. This can be
 	// used to determine whether a sink is configured correctly and is exporting
 	// telemetry data.
@@ -98,6 +113,10 @@ type TelemetrySource struct {
 // now there are no guarantees around delivery of telemetry data, especially if
 // the sink's endpoint is unavailable.
 type TelemetrySink struct {
+	// A name provided to the telemetry sink that's unique within the export
+	// policy.
+	Name string `json:"name"`
+
 	// Configures how telemetry data should be batched before sending to the sink.
 	Batch Batch `json:"batch,omitempty"`
 
@@ -107,11 +126,14 @@ type TelemetrySink struct {
 	// configured incorrectly.
 	Retry Retry `json:"retry,omitempty"`
 
-	// Configures the export policy to publish telemetry using the HTTP version of
-	// the OTLP protocol.
+	// A list of sources that should be sent to the telemetry sink.
 	//
-	// See: https://opentelemetry.io/docs/specs/otel/protocol/
-	OpenTelemetry *OpenTelemetrySink `json:"openTelemetry,omitempty"`
+	// +kubebuilder:validation:Required
+	Sources []string `json:"sources"`
+
+	// Configures the export policy to publish telemetry using the Prometheus
+	// Remote Write protocol.
+	PrometheusRemoteWrite *PrometheusRemoteWriteSink `json:"prometheusRemoteWrite,omitempty"`
 }
 
 // References a secret in the same namespace as the entity defining the
@@ -121,10 +143,6 @@ type LocalSecretReference struct {
 	//
 	// +kubebuilder:validation:Required
 	Name string `json:"name"`
-	// The key within the secret that contains the necessary value.
-	//
-	// +kubebuilder:validation:Required
-	Key string `json:"key"`
 }
 
 // Configures how Bearer token authentication should be used to authenticate
@@ -135,6 +153,18 @@ type LocalSecretReference struct {
 type BearerTokenAuthentication struct {
 	// Configures which secret is used to retrieve the bearer token to add to the
 	// authorization header.
+	//
+	// +kubebuilder:validation:Required
+	SecretRef corev1.SecretKeySelector `json:"secretRef"`
+}
+
+// Configures how the sink should use Basic Auth for authenticating with a
+// telemetry endpoint.
+type BasicAuthAuthentication struct {
+	// Configures which secret is used to retrieve the bearer token to add to the
+	// authorization header. Secret must be a
+	//
+	// +kubebuilder:validation:Required
 	SecretRef LocalSecretReference `json:"secretRef"`
 }
 
@@ -144,21 +174,20 @@ type Authentication struct {
 	// Configures the sink to use a Bearer token in the authorization header when
 	// authenticating with the configured endpoint.
 	BearerToken *BearerTokenAuthentication `json:"bearerToken,omitempty"`
+
+	// Configures the sink to use basic auth to authenticate with the configured
+	// endpoint.
+	BasicAuth *BasicAuthAuthentication `json:"basicAuth,omitempty"`
 }
 
 // Configures how the sink should send data to a OTLP HTTP endpoint.
-type OpenTelemetrySink struct {
+type PrometheusRemoteWriteSink struct {
 	// Configures how the sink should authenticate with the HTTP endpoint.
-	Authentication Authentication `json:"authentication,omitempty"`
+	Authentication *Authentication `json:"authentication,omitempty"`
 
 	// Configure an HTTP endpoint to use for publishing telemetry data.
-	HTTP *OpenTelemetryHTTP `json:"http,omitempty"`
-}
-
-// Configures the OpenTelemetry sink to use an HTTP endpoint to send telemetry
-// data.
-type OpenTelemetryHTTP struct {
-	// The HTTP endpoint that should be used to publish telemetry data.
+	//
+	// +kubebuilder:validation:Required
 	Endpoint string `json:"endpoint"`
 }
 

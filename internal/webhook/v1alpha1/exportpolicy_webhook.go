@@ -69,17 +69,19 @@ func (d *ExportPolicyCustomDefaulter) Default(ctx context.Context, obj runtime.O
 	}
 	exportpolicylog.Info("Defaulting for ExportPolicy", "name", exportpolicy.GetName())
 
-	if exportpolicy.Spec.Sink.Retry.MaxAttempts == 0 {
-		exportpolicy.Spec.Sink.Retry.MaxAttempts = d.DefaultRetryMaxAttempts
-	}
-	if exportpolicy.Spec.Sink.Retry.BackoffDuration == "" {
-		exportpolicy.Spec.Sink.Retry.BackoffDuration = d.DefaultRetryBackoffDuration
-	}
-	if exportpolicy.Spec.Sink.Batch.MaxSize == 0 {
-		exportpolicy.Spec.Sink.Batch.MaxSize = d.DefaultBatchMaxSize
-	}
-	if exportpolicy.Spec.Sink.Batch.Timeout == "" {
-		exportpolicy.Spec.Sink.Batch.Timeout = d.DefaultBatchTimeout
+	for i := range exportpolicy.Spec.Sinks {
+		if exportpolicy.Spec.Sinks[i].Retry.MaxAttempts == 0 {
+			exportpolicy.Spec.Sinks[i].Retry.MaxAttempts = d.DefaultRetryMaxAttempts
+		}
+		if exportpolicy.Spec.Sinks[i].Retry.BackoffDuration == "" {
+			exportpolicy.Spec.Sinks[i].Retry.BackoffDuration = d.DefaultRetryBackoffDuration
+		}
+		if exportpolicy.Spec.Sinks[i].Batch.MaxSize == 0 {
+			exportpolicy.Spec.Sinks[i].Batch.MaxSize = d.DefaultBatchMaxSize
+		}
+		if exportpolicy.Spec.Sinks[i].Batch.Timeout == "" {
+			exportpolicy.Spec.Sinks[i].Batch.Timeout = d.DefaultBatchTimeout
+		}
 	}
 
 	return nil
@@ -172,7 +174,9 @@ func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicyS
 		}
 	}
 
-	errs = append(errs, validateTelemetrySink(fieldPath.Child("sink"), spec.Sink)...)
+	for _, sink := range spec.Sinks {
+		errs = append(errs, validateTelemetrySink(fieldPath.Child("sink"), sink)...)
+	}
 
 	return errs
 }
@@ -203,10 +207,10 @@ func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field
 
 func validateTelemetrySink(path *field.Path, sink v1alpha1.TelemetrySink) field.ErrorList {
 	var errs field.ErrorList
-	if sink.OpenTelemetry == nil {
-		errs = append(errs, field.Required(path.Child("openTelemetry"), ""))
+	if sink.PrometheusRemoteWrite == nil {
+		errs = append(errs, field.Required(path.Child("prometheusRemoteWrite"), ""))
 	} else {
-		errs = append(errs, validateOpenTelemetrySink(path.Child("openTelemetry"), *sink.OpenTelemetry)...)
+		errs = append(errs, validatePrometheusRemoteWrite(path.Child("prometheusRemoteWrite"), *sink.PrometheusRemoteWrite)...)
 	}
 
 	batchPath := path.Child("batch")
@@ -232,14 +236,12 @@ func validateTelemetrySink(path *field.Path, sink v1alpha1.TelemetrySink) field.
 	return errs
 }
 
-func validateOpenTelemetrySink(path *field.Path, otel v1alpha1.OpenTelemetrySink) field.ErrorList {
+func validatePrometheusRemoteWrite(path *field.Path, otel v1alpha1.PrometheusRemoteWriteSink) field.ErrorList {
 	var errs field.ErrorList
-	if otel.HTTP == nil {
-		errs = append(errs, field.Required(path.Child("http"), "A HTTP endpoint configuration is required. Additional endpoint types will be supported in the future."))
-	} else if otel.HTTP.Endpoint == "" {
-		errs = append(errs, field.Required(path.Child("http").Child("endpoint"), "A valid endpoint URL is required"))
-	} else if _, err := url.Parse(otel.HTTP.Endpoint); err != nil {
-		errs = append(errs, field.Invalid(path.Child("http").Child("endpoint"), otel.HTTP.Endpoint, fmt.Sprintf("Failed to parse URL: %s", err)))
+	if otel.Endpoint == "" {
+		errs = append(errs, field.Required(path.Child("http"), "A valid endpoint URL is required"))
+	} else if _, err := url.Parse(otel.Endpoint); err != nil {
+		errs = append(errs, field.Invalid(path.Child("http"), otel.Endpoint, fmt.Sprintf("Failed to parse URL: %s", err)))
 	}
 	return errs
 }

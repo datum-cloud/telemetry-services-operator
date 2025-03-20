@@ -206,6 +206,11 @@ func main() {
 	if err = (&controller.ExportPolicyReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
+		MetricsService: controller.MetricsService{
+			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
+			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
+			Password: os.Getenv("TELEMETRY_SERVICE_METRICS_PASSWORD"),
+		},
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ExportPolicy")
 		os.Exit(1)

@@ -43,99 +43,141 @@ spec:
               are deployed and ensure it matches the expected configuration. This field
               is required when configuring an export policy.
             properties:
-              sink:
+              sinks:
                 description: |-
                   Configures how telemetry data should be sent to a third-party telemetry
                   platforms.
-                properties:
-                  batch:
-                    description: Configures how telemetry data should be batched before
-                      sending to the sink.
-                    properties:
-                      maxSize:
-                        default: 500
-                        description: Maximum number of telemetry entries per batch.
-                        type: integer
-                      timeout:
-                        default: 5s
-                        description: Batch timeout before sending telemetry. Must
-                          be a duration (e.g. 5s).
+                items:
+                  description: |-
+                    Configures how telemetry data should be sent to a third-party platform. As of
+                    now there are no guarantees around delivery of telemetry data, especially if
+                    the sink's endpoint is unavailable.
+                  properties:
+                    batch:
+                      description: Configures how telemetry data should be batched
+                        before sending to the sink.
+                      properties:
+                        maxSize:
+                          default: 500
+                          description: Maximum number of telemetry entries per batch.
+                          type: integer
+                        timeout:
+                          default: 5s
+                          description: Batch timeout before sending telemetry. Must
+                            be a duration (e.g. 5s).
+                          type: string
+                      required:
+                      - maxSize
+                      - timeout
+                      type: object
+                    name:
+                      description: |-
+                        A name provided to the telemetry sink that's unique within the export
+                        policy.
+                      type: string
+                    prometheusRemoteWrite:
+                      description: |-
+                        Configures the export policy to publish telemetry using the Prometheus
+                        Remote Write protocol.
+                      properties:
+                        authentication:
+                          description: Configures how the sink should authenticate
+                            with the HTTP endpoint.
+                          properties:
+                            basicAuth:
+                              description: |-
+                                Configures the sink to use basic auth to authenticate with the configured
+                                endpoint.
+                              properties:
+                                secretRef:
+                                  description: |-
+                                    Configures which secret is used to retrieve the bearer token to add to the
+                                    authorization header. Secret must be a
+                                  properties:
+                                    name:
+                                      description: The name of the secret
+                                      type: string
+                                  required:
+                                  - name
+                                  type: object
+                              required:
+                              - secretRef
+                              type: object
+                            bearerToken:
+                              description: |-
+                                Configures the sink to use a Bearer token in the authorization header when
+                                authenticating with the configured endpoint.
+                              properties:
+                                secretRef:
+                                  description: |-
+                                    Configures which secret is used to retrieve the bearer token to add to the
+                                    authorization header.
+                                  properties:
+                                    key:
+                                      description: The key of the secret to select
+                                        from.  Must be a valid secret key.
+                                      type: string
+                                    name:
+                                      default: ""
+                                      description: |-
+                                        Name of the referent.
+                                        This field is effectively required, but due to backwards compatibility is
+                                        allowed to be empty. Instances of this type with an empty value here are
+                                        almost certainly wrong.
+                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                      type: string
+                                    optional:
+                                      description: Specify whether the Secret or its
+                                        key must be defined
+                                      type: boolean
+                                  required:
+                                  - key
+                                  type: object
+                                  x-kubernetes-map-type: atomic
+                              required:
+                              - secretRef
+                              type: object
+                          type: object
+                        endpoint:
+                          description: Configure an HTTP endpoint to use for publishing
+                            telemetry data.
+                          type: string
+                      required:
+                      - endpoint
+                      type: object
+                    retry:
+                      description: |-
+                        Configures the export policies' retry behavior when it fails to send
+                        requests to the sink's endpoint. There's no guarantees that the export
+                        policy will retry until success if the endpoint is not available or
+                        configured incorrectly.
+                      properties:
+                        backoffDuration:
+                          default: 5s
+                          description: |-
+                            Backoff duration that should be used to backoff when retrying requests.
+                            Should be a duration string, e.g. `10s`.
+                          type: string
+                        maxAttempts:
+                          default: 3
+                          description: Maximum number of attempts before telemetry
+                            data should be dropped.
+                          type: integer
+                      required:
+                      - backoffDuration
+                      - maxAttempts
+                      type: object
+                    sources:
+                      description: A list of sources that should be sent to the telemetry
+                        sink.
+                      items:
                         type: string
-                    required:
-                    - maxSize
-                    - timeout
-                    type: object
-                  openTelemetry:
-                    description: |-
-                      Configures the export policy to publish telemetry using the HTTP version of
-                      the OTLP protocol.
-
-                      See: https://opentelemetry.io/docs/specs/otel/protocol/
-                    properties:
-                      authentication:
-                        description: Configures how the sink should authenticate with
-                          the HTTP endpoint.
-                        properties:
-                          bearerToken:
-                            description: |-
-                              Configures the sink to use a Bearer token in the authorization header when
-                              authenticating with the configured endpoint.
-                            properties:
-                              secretRef:
-                                description: |-
-                                  Configures which secret is used to retrieve the bearer token to add to the
-                                  authorization header.
-                                properties:
-                                  key:
-                                    description: The key within the secret that contains
-                                      the necessary value.
-                                    type: string
-                                  name:
-                                    description: The name of the secret
-                                    type: string
-                                required:
-                                - key
-                                - name
-                                type: object
-                            required:
-                            - secretRef
-                            type: object
-                        type: object
-                      http:
-                        description: Configure an HTTP endpoint to use for publishing
-                          telemetry data.
-                        properties:
-                          endpoint:
-                            description: The HTTP endpoint that should be used to
-                              publish telemetry data.
-                            type: string
-                        required:
-                        - endpoint
-                        type: object
-                    type: object
-                  retry:
-                    description: |-
-                      Configures the export policies' retry behavior when it fails to send
-                      requests to the sink's endpoint. There's no guarantees that the export
-                      policy will retry until success if the endpoint is not available or
-                      configured incorrectly.
-                    properties:
-                      backoffDuration:
-                        default: 5s
-                        description: |-
-                          Backoff duration that should be used to backoff when retrying requests.
-                          Should be a duration string, e.g. `10s`.
-                        type: string
-                      maxAttempts:
-                        default: 3
-                        description: Maximum number of attempts before telemetry data
-                          should be dropped.
-                        type: integer
-                    required:
-                    - backoffDuration
-                    - maxAttempts
-                    type: object
-                type: object
+                      type: array
+                  required:
+                  - name
+                  - sources
+                  type: object
+                type: array
               sources:
                 description: |-
                   Defines how the export policy should source telemetry data to publish to
@@ -175,7 +217,7 @@ spec:
                   type: object
                 type: array
             required:
-            - sink
+            - sinks
             - sources
             type: object
           status:
@@ -186,9 +228,8 @@ spec:
             properties:
               conditions:
                 description: |-
-                  Provides status information on the current status of the sink. This can be
-                  used to determine whether a sink is configured correctly and is exporting
-                  telemetry data.
+                  Provides summary status information on the export policy as a whole. Review
+                  the sink status information for detailed information on each sink.
 
                   Known condition types are: "Ready"
                 items:
@@ -244,6 +285,86 @@ spec:
                   - reason
                   - status
                   - type
+                  type: object
+                type: array
+              sinks:
+                description: Provides status information on each sink that's configured.
+                items:
+                  description: |-
+                    SinkStatus provides status information on the current status of a sink. This
+                    can be used to determine whether a sink is configured correctly and is
+                    exporting telemetry data.
+                  properties:
+                    conditions:
+                      description: |-
+                        Provides status information on the current status of the sink. This can be
+                        used to determine whether a sink is configured correctly and is exporting
+                        telemetry data.
+
+                        Known condition types are: "Ready"
+                      items:
+                        description: Condition contains details for one aspect of
+                          the current state of this API Resource.
+                        properties:
+                          lastTransitionTime:
+                            description: |-
+                              lastTransitionTime is the last time the condition transitioned from one status to another.
+                              This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                            format: date-time
+                            type: string
+                          message:
+                            description: |-
+                              message is a human readable message indicating details about the transition.
+                              This may be an empty string.
+                            maxLength: 32768
+                            type: string
+                          observedGeneration:
+                            description: |-
+                              observedGeneration represents the .metadata.generation that the condition was set based upon.
+                              For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                              with respect to the current state of the instance.
+                            format: int64
+                            minimum: 0
+                            type: integer
+                          reason:
+                            description: |-
+                              reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                              Producers of specific condition types may define expected values and meanings for this field,
+                              and whether the values are considered a guaranteed API.
+                              The value should be a CamelCase string.
+                              This field may not be empty.
+                            maxLength: 1024
+                            minLength: 1
+                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                            type: string
+                          status:
+                            description: status of the condition, one of True, False,
+                              Unknown.
+                            enum:
+                            - "True"
+                            - "False"
+                            - Unknown
+                            type: string
+                          type:
+                            description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                            maxLength: 316
+                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                            type: string
+                        required:
+                        - lastTransitionTime
+                        - message
+                        - reason
+                        - status
+                        - type
+                        type: object
+                      type: array
+                    name:
+                      description: |-
+                        The name of the corresponding sink configuration in the spec of the export
+                        policy.
+                      type: string
+                  required:
+                  - name
                   type: object
                 type: array
             type: object

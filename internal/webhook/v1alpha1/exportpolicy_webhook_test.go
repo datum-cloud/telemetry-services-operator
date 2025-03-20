@@ -39,11 +39,11 @@ var _ = Describe("ExportPolicy Webhook", func() {
 		// Example:
 		It("Should apply defaults when a required field is empty", func() {
 			By("simulating a scenario where defaults should be applied")
-			obj.Spec.Sink.Batch.Timeout = ""
+			obj.Spec.Sinks[0].Batch.Timeout = ""
 			By("calling the Default method to apply defaults")
 			defaulter.Default(ctx, obj)
 			By("checking that the default values are set")
-			Expect(obj.Spec.Sink.Batch.Timeout).To(Equal("2s"))
+			Expect(obj.Spec.Sinks[0].Batch.Timeout).To(Equal("2s"))
 		})
 	})
 
