@@ -8,8 +8,7 @@
       "installOhMyZsh": true,
       "configureZshAsDefaultShell": true,
       "installOhMyZshConfig": true,
-      "installZsh": true,
-      "upgradePackages": true
+      "installZsh": true
     }
   },
 
@@ -23,7 +22,9 @@
       "extensions": [
         "ms-kubernetes-tools.vscode-kubernetes-tools",
         "ms-azuretools.vscode-docker",
-        "golang.go"
+        "golang.go",
+        "patbenatar.advanced-new-file",
+        "lucperkins.vrl-vscode"
       ]
     }
   },
