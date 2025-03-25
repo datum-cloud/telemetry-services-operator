@@ -1,4 +1,4 @@
-name: Publish Docker Image
+name: Publish Artifacts
 
 on:
   push:
@@ -6,8 +6,26 @@ on:
     types: ['published']
 
 jobs:
-  publish:
+  publish-container-image:
     uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.0.0
     with:
       image-name: telemetry-services-operator
+    secrets: inherit
+
+  publish-kustomize-bundles:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        bundles:
+          - name: ghcr.io/datum-cloud/telemetry-services-operator/crds
+            path: config/crd
+          - name: ghcr.io/datum-cloud/telemetry-services-operator/vector-telemetry-exporter
+            path: config/vector
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@publish-kustomize-bundle
+    with:
+      bundle-name: ${{ matrix.bundles.name }}
+      bundle-path: ${{ matrix.bundles.path }}
     secrets: inherit
