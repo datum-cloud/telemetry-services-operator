@@ -7,7 +7,7 @@ on:
 
 jobs:
   publish-container-image:
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.0.0
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.1.0
     with:
       image-name: telemetry-services-operator
     secrets: inherit
@@ -24,7 +24,7 @@ jobs:
             path: config/crd
           - name: ghcr.io/datum-cloud/telemetry-services-operator/vector-telemetry-exporter
             path: config/vector
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@publish-kustomize-bundle
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.1.0
     with:
       bundle-name: ${{ matrix.bundles.name }}
       bundle-path: ${{ matrix.bundles.path }}
