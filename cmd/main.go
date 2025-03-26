@@ -60,6 +60,7 @@ func main() {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
+	var vectorConfigLabelKey, vectorConfigLabelValue string
 	var enableLeaderElection bool
 	var probeAddr string
 	var secureMetrics bool
@@ -82,6 +83,8 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(&vectorConfigLabelKey, "vector-config-label-key", "telemetry.datumapis.com/vector-export-policy-config", "The key of the label that will be added to the vector config secret.")
+	flag.StringVar(&vectorConfigLabelValue, "vector-config-label-value", "true", "The value of the label that will be added to the vector config secret.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -211,6 +214,8 @@ func main() {
 			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
 			Password: os.Getenv("TELEMETRY_SERVICE_METRICS_PASSWORD"),
 		},
+		VectorConfigLabelKey:   vectorConfigLabelKey,
+		VectorConfigLabelValue: vectorConfigLabelValue,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "ExportPolicy")
 		os.Exit(1)

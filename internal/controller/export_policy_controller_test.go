@@ -10,7 +10,6 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/finalizer"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -91,15 +90,10 @@ var _ = Describe("ExportPolicy Controller", func() {
 		})
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
-			finalizers := finalizer.NewFinalizers()
-
 			controllerReconciler := &ExportPolicyReconciler{
-				Client:     k8sClient,
-				Scheme:     k8sClient.Scheme(),
-				finalizers: finalizers,
+				Client: k8sClient,
+				Scheme: k8sClient.Scheme(),
 			}
-
-			Expect(finalizers.Register(exportPolicyFinalizer, controllerReconciler)).NotTo(HaveOccurred())
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
 				NamespacedName: typeNamespacedName,

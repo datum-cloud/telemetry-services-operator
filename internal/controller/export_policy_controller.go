@@ -15,23 +15,24 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/finalizer"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
 )
 
-const exportPolicyFinalizer = "telemetry.datumapis.com/export-policy-controller"
-
 // ExportPolicyReconciler reconciles a ExportPolicy object
 type ExportPolicyReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	finalizers finalizer.Finalizers
+	Scheme *runtime.Scheme
 
 	// The metrics service that can be used to query metrics from the telemetry
 	// system.
 	MetricsService MetricsService
+
+	// The vector config label key that will be added to the vector config secret.
+	VectorConfigLabelKey   string
+	VectorConfigLabelValue string
 }
 
 // MetricsService is a struct that contains the information needed to configure
@@ -48,7 +49,6 @@ type MetricsService struct {
 
 // +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies/finalizers,verbs=update
 
 // Reconcile an Export Policy and ensure the necessary resources exist to export
 // the telemetry sources that are configured. This will create a vector config
@@ -74,19 +74,6 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, err
 	}
 	logger.Info("reconciling export policy")
-
-	// Ensure the export policy is finalized so we can clean up resources when the
-	// policy is deleted.
-	finalizationResult, err := r.finalizers.Finalize(ctx, exportPolicy)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to finalize: %w", err)
-	}
-	if finalizationResult.Updated {
-		if err = r.Client.Update(ctx, exportPolicy); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update based on finalization result: %w", err)
-		}
-		return ctrl.Result{}, nil
-	}
 
 	// Configure the export policy and update the status information for the sink
 	// based on whether the sink was correctly configured.
@@ -158,7 +145,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			Name:      fmt.Sprintf("export-policy-vector-config-%s", exportPolicy.GetUID()),
 			Namespace: exportPolicy.GetNamespace(),
 			Labels: map[string]string{
-				"export-policy-vector-config": "true",
+				r.VectorConfigLabelKey: r.VectorConfigLabelValue,
 			},
 		},
 		Data: map[string][]byte{
@@ -166,39 +153,21 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		},
 	}
 
-	// Create the secret if it doesn't exist, otherwise update it.
-	if err := r.Client.Create(ctx, configSecret); err != nil {
-		if !errors.IsAlreadyExists(err) {
-			return ctrl.Result{}, fmt.Errorf("failed to create vector config secret: %w", err)
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, configSecret, func() error {
+		// Set the owner reference for the vector config secret so it is deleted
+		// when the export policy is deleted.
+		if err := controllerutil.SetControllerReference(exportPolicy, configSecret, r.Scheme); err != nil {
+			return fmt.Errorf("failed to set controller reference: %w", err)
 		}
-		// Update existing secret
-		if err := r.Client.Update(ctx, configSecret); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to update vector config secret: %w", err)
+
+		configSecret.Data = map[string][]byte{
+			fmt.Sprintf("%s.json", exportPolicy.UID): vectorConfigJSON,
 		}
-	}
+
+		return nil
+	})
 
 	return ctrl.Result{}, err
-}
-
-// Finalize will ensure all resources related to the export policy are deleted
-// from the cluster before the resource can be deleted.
-func (r *ExportPolicyReconciler) Finalize(ctx context.Context, obj client.Object) (finalizer.Result, error) {
-	secret := &corev1.Secret{}
-	if err := r.Client.Get(ctx, client.ObjectKey{
-		Name:      fmt.Sprintf("export-policy-vector-config-%s", obj.GetUID()),
-		Namespace: obj.GetNamespace(),
-	}, secret); errors.IsNotFound(err) {
-		return finalizer.Result{}, nil
-	} else if err != nil {
-		return finalizer.Result{}, err
-	}
-
-	// Delete the vector config secret
-	if err := r.Client.Delete(ctx, secret); err != nil {
-		return finalizer.Result{}, fmt.Errorf("failed to delete vector config secret: %w", err)
-	}
-
-	return finalizer.Result{}, nil
 }
 
 // configureSink sets up a sink configuration and returns the sink
@@ -345,10 +314,6 @@ func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatu
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *ExportPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	r.finalizers = finalizer.NewFinalizers()
-	if err := r.finalizers.Register(exportPolicyFinalizer, r); err != nil {
-		return fmt.Errorf("failed to register finalizer")
-	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&v1alpha1.ExportPolicy{}).
 		Named("exportpolicy").
