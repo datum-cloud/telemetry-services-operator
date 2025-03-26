@@ -94,7 +94,7 @@ type MetricSource struct {
 	// ``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
 	//
 	// See: https://docs.victoriametrics.com/metricsql/
-	Metricsql string `json:"metricsql,omitempty"`
+	MetricsQL string `json:"metricsql,omitempty"`
 }
 
 // Defines how the export policy should source telemetry data from resources on
