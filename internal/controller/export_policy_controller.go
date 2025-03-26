@@ -203,7 +203,7 @@ func (r *ExportPolicyReconciler) Finalize(ctx context.Context, obj client.Object
 
 // configureSink sets up a sink configuration and returns the sink
 // configuration, status, and whether the status changed
-func configureSink(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]interface{}, *v1alpha1.SinkStatus, bool) {
+func configureSink(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]any, *v1alpha1.SinkStatus, bool) {
 	logger := log.FromContext(ctx)
 
 	sinkStatus := getSinkStatus(exportPolicy, sink.Name)
@@ -274,6 +274,8 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 		}) {
 			statusChanged = true
 		}
+
+		return sinkConfig, sinkStatus, statusChanged
 	}
 
 	// Handle unsupported sink type
