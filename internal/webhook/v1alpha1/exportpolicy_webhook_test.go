@@ -41,7 +41,7 @@ var _ = Describe("ExportPolicy Webhook", func() {
 			By("simulating a scenario where defaults should be applied")
 			obj.Spec.Sinks[0].Batch.Timeout = ""
 			By("calling the Default method to apply defaults")
-			defaulter.Default(ctx, obj)
+			Expect(defaulter.Default(ctx, obj)).Error().NotTo(HaveOccurred())
 			By("checking that the default values are set")
 			Expect(obj.Spec.Sinks[0].Batch.Timeout).To(Equal("2s"))
 		})
