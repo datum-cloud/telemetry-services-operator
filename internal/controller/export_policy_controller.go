@@ -12,7 +12,6 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -73,63 +72,22 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	logger.Info("reconciling export policy")
 
-	// Configure the export policy and update the status information for the sink
-	// based on whether the sink was correctly configured.
-	// Create a vector configuration for each source and sink combination
-	vectorConfig := map[string]any{
-		"sources": make(map[string]any),
-		"sinks":   make(map[string]any),
-	}
-
-	// Configure the sources that will be used to export the metrics from the
-	// telemetry sources to the configured sinks.
-	sources := vectorConfig["sources"].(map[string]any)
-	for _, source := range exportPolicy.Spec.Sources {
-		sourceID := fmt.Sprintf("%s:%s", exportPolicy.UID, source.Name)
-
-		if source.Metrics == nil {
-			// TODO: Add a status condition to the export policy to indicate that
-			// the telemetry source is not supported.
-			return ctrl.Result{}, fmt.Errorf("unsupported telemetry source type")
-		}
-
-		sources[sourceID] = map[string]any{
-			"type":      "prometheus_scrape",
-			"endpoints": []string{r.MetricsService.Endpoint},
-			"auth": map[string]any{
-				"strategy": "basic",
-				"user":     r.MetricsService.Username,
-				"password": r.MetricsService.Password,
-			},
-			"query": map[string]any{
-				"match[]": []string{source.Metrics.MetricsQL},
-			},
-		}
-	}
-
-	// Configure sinks
-	sinks := vectorConfig["sinks"].(map[string]any)
-	sinkStatuses := []v1alpha1.SinkStatus{}
-	var anyStatusChanged bool
-
-	for _, sink := range exportPolicy.Spec.Sinks {
-		sinkID := fmt.Sprintf("%s:%s", exportPolicy.UID, sink.Name)
-		sinkConfig, sinkStatus, statusChanged := configureSink(ctx, r.Client, sink, exportPolicy)
-
-		anyStatusChanged = anyStatusChanged || statusChanged
-		sinkStatuses = append(sinkStatuses, *sinkStatus)
-		sinks[sinkID] = sinkConfig
-	}
-
-	statusChanged := updateExportPolicyConditions(exportPolicy, sinkStatuses)
-
-	// Update export policy status if needed
-	if anyStatusChanged || statusChanged {
-		exportPolicy.Status.Sinks = sinkStatuses
-
+	// Validate that the export policy configuration is valid and update the
+	// status of the export policy to reflect the status of the sinks.
+	if statusChanged, err := r.validateExportPolicy(ctx, exportPolicy); err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to validate export policy: %w", err)
+	} else if statusChanged {
+		logger.Info("export policy status changed, updating status")
 		if err := r.Client.Status().Update(ctx, exportPolicy); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update export policy status: %w", err)
 		}
+	}
+
+	// Configure the export policy and update the status information for the sink
+	// based on whether the sink was correctly configured.
+	vectorConfig, err := r.createVectorConfiguration(ctx, exportPolicy)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to create vector configuration: %w", err)
 	}
 
 	// Create or update the vector config secret
@@ -168,95 +126,64 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, err
 }
 
-// configureSink sets up a sink configuration and returns the sink
-// configuration, status, and whether the status changed
-func configureSink(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]any, *v1alpha1.SinkStatus, bool) {
-	logger := log.FromContext(ctx)
+// validateExportPolicy validates the export policy configuration and updates the
+// status of the export policy to reflect the status of the sinks.
+func (r *ExportPolicyReconciler) validateExportPolicy(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) (bool, error) {
+	statusChanged := false
+	sinkStatuses := []v1alpha1.SinkStatus{}
+	// Validate each of the sinks in the export policy have a valid configuration
+	// and the secrets exist if necessary.
+	for _, sink := range exportPolicy.Spec.Sinks {
+		status := getSinkStatus(exportPolicy, sink.Name)
 
-	sinkStatus := getSinkStatus(exportPolicy, sink.Name)
-	var statusChanged bool
+		if sink.Target.PrometheusRemoteWrite != nil {
+			// Assume the sink is accepted and expect to be set to false if any
+			// validation fails.
+			accepted := true
 
-	if sink.Target.PrometheusRemoteWrite != nil {
-		// Get all of the sources that are configured for the sink and add them
-		// to the inputs for the prometheus remote write sink.
-		inputs := []string{}
-		for _, source := range sink.Sources {
-			inputs = append(inputs, fmt.Sprintf("%s:%s", exportPolicy.UID, source))
-		}
+			// Validate that any authentication for the sink is valid
+			if sink.Target.PrometheusRemoteWrite.Authentication != nil {
+				if sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth != nil {
+					_, err := retrieveBasicAuthSecret(ctx, r.Client, sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef, exportPolicy)
+					if err != nil {
+						accepted = false
+						updated := apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
+							Type:    "Accepted",
+							Status:  metav1.ConditionFalse,
+							Reason:  "InvalidAuthentication",
+							Message: err.Error(),
+						})
 
-		// Configure the prometheus remote write sink
-		sinkConfig := map[string]any{
-			"type":     "prometheus_remote_write",
-			"endpoint": sink.Target.PrometheusRemoteWrite.Endpoint,
-			"inputs":   inputs,
-		}
-
-		if sink.Target.PrometheusRemoteWrite.Authentication != nil {
-			// Validate the authentication secret exists and is the correct type
-			secretRef := sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef
-			secret := &corev1.Secret{}
-			err := client.Get(ctx, types.NamespacedName{
-				Name:      secretRef.Name,
-				Namespace: exportPolicy.Namespace,
-			}, secret)
-
-			if err != nil || secret.Type != "kubernetes.io/basic-auth" {
-				condition := metav1.Condition{
-					Type:               "Ready",
-					Status:             metav1.ConditionFalse,
-					ObservedGeneration: exportPolicy.Generation,
+						if updated {
+							statusChanged = true
+						}
+					}
 				}
+			}
 
-				if errors.IsNotFound(err) {
-					condition.Reason = "SecretNotFound"
-					condition.Message = fmt.Sprintf("The configured secret `%s` was not found", secretRef.Name)
-				} else if err != nil {
-					condition.Reason = "SecretError"
-					condition.Message = fmt.Sprintf("Failed to check if the secret '%s' exists", secretRef.Name)
-					logger.Error(err, "failed to check if secret exists")
-				} else if secret.Type != "kubernetes.io/basic-auth" {
-					condition.Reason = "InvalidSecretType"
-					condition.Message = fmt.Sprintf("Secret `%s` must be of type `kubernetes.io/basic-auth`", secretRef.Name)
-				}
+			if accepted {
+				updated := apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
+					Type:   "Accepted",
+					Status: metav1.ConditionTrue,
+					Reason: "SinkConfigured",
+				})
 
-				if apimeta.SetStatusCondition(&sinkStatus.Conditions, condition) {
+				if updated {
 					statusChanged = true
 				}
 			}
-
-			sinkConfig["auth"] = map[string]any{
-				"strategy": "basic",
-				"user":     string(secret.Data["username"]),
-				"password": string(secret.Data["password"]),
-			}
 		}
 
-		// Mark sink as ready
-		if apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
-			Type:               "Ready",
-			Status:             metav1.ConditionTrue,
-			Reason:             "Configured",
-			ObservedGeneration: exportPolicy.Generation,
-			Message:            "Sink configured successfully",
-		}) {
-			statusChanged = true
-		}
-
-		return sinkConfig, sinkStatus, statusChanged
+		sinkStatuses = append(sinkStatuses, *status)
 	}
 
-	// Handle unsupported sink type
-	if apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
-		Type:               "Ready",
-		Status:             metav1.ConditionFalse,
-		Reason:             "UnsupportedSinkType",
-		ObservedGeneration: exportPolicy.Generation,
-		Message:            "Sink type not supported",
-	}) {
-		statusChanged = true
-	}
+	exportPolicy.Status.Sinks = sinkStatuses
 
-	return nil, sinkStatus, statusChanged
+	// Update the overall status conditions of the export policy based on the
+	// status of its sinks.
+	statusChanged = updateExportPolicyConditions(exportPolicy, sinkStatuses) || statusChanged
+
+	return statusChanged, nil
 }
 
 // getSinkStatus retrieves the existing sink status from the export policy if it exists,
@@ -267,6 +194,7 @@ func getSinkStatus(exportPolicy *v1alpha1.ExportPolicy, sinkName string) *v1alph
 			return existingStatus.DeepCopy()
 		}
 	}
+
 	return &v1alpha1.SinkStatus{
 		Name: sinkName,
 	}
@@ -275,25 +203,23 @@ func getSinkStatus(exportPolicy *v1alpha1.ExportPolicy, sinkName string) *v1alph
 // updateExportPolicyConditions updates the overall status conditions of the export policy
 // based on the status of its sinks. Returns true if conditions were changed.
 func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatuses []v1alpha1.SinkStatus) bool {
-	var readyCount, failedCount int
+	var acceptedCount int
 	for _, sinkStatus := range sinkStatuses {
 		for _, condition := range sinkStatus.Conditions {
-			if condition.Type == "Ready" {
+			if condition.Type == "Accepted" {
 				if condition.Status == metav1.ConditionTrue {
-					readyCount++
-				} else {
-					failedCount++
+					acceptedCount++
 				}
 			}
 		}
 	}
 
 	var condition metav1.Condition
-	if readyCount == len(sinkStatuses) {
+	if acceptedCount == len(sinkStatuses) {
 		condition = metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionTrue,
-			Reason:             "SinksReady",
+			Reason:             "SinksAccepted",
 			Message:            "All sinks are configured.",
 			ObservedGeneration: exportPolicy.Generation,
 		}
@@ -301,8 +227,8 @@ func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatu
 		condition = metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionFalse,
-			Reason:             "SinksNotReady",
-			Message:            fmt.Sprintf("%d/%d sinks are ready. Check the status of the sinks for more details.", readyCount, len(sinkStatuses)),
+			Reason:             "SinksNotAccepted",
+			Message:            fmt.Sprintf("%d/%d sinks are accepted. Check the status of the sinks for more details.", acceptedCount, len(sinkStatuses)),
 			ObservedGeneration: exportPolicy.Generation,
 		}
 	}
