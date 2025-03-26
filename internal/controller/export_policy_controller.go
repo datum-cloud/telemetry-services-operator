@@ -252,7 +252,9 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 					condition.Message = fmt.Sprintf("Secret `%s` must be of type `kubernetes.io/basic-auth`", secretRef.Name)
 				}
 
-				statusChanged = apimeta.SetStatusCondition(&sinkStatus.Conditions, condition)
+				if apimeta.SetStatusCondition(&sinkStatus.Conditions, condition) {
+					statusChanged = true
+				}
 			}
 
 			sinkConfig["auth"] = map[string]any{
@@ -263,25 +265,27 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 		}
 
 		// Mark sink as ready
-		statusChanged = apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
+		if apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
 			Type:               "Ready",
 			Status:             metav1.ConditionTrue,
 			Reason:             "Configured",
 			ObservedGeneration: exportPolicy.Generation,
 			Message:            "Sink configured successfully",
-		})
-
-		return sinkConfig, sinkStatus, statusChanged
+		}) {
+			statusChanged = true
+		}
 	}
 
 	// Handle unsupported sink type
-	statusChanged = apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
+	if apimeta.SetStatusCondition(&sinkStatus.Conditions, metav1.Condition{
 		Type:               "Ready",
 		Status:             metav1.ConditionFalse,
 		Reason:             "UnsupportedSinkType",
 		ObservedGeneration: exportPolicy.Generation,
 		Message:            "Sink type not supported",
-	})
+	}) {
+		statusChanged = true
+	}
 
 	return nil, sinkStatus, statusChanged
 }
