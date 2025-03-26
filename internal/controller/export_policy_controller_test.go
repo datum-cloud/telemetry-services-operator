@@ -91,8 +91,10 @@ var _ = Describe("ExportPolicy Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ExportPolicyReconciler{
-				Client: k8sClient,
-				Scheme: k8sClient.Scheme(),
+				Client:                 k8sClient,
+				Scheme:                 k8sClient.Scheme(),
+				VectorConfigLabelKey:   "telemetry.datumapis.com/vector-export-policy-config",
+				VectorConfigLabelValue: "true",
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
