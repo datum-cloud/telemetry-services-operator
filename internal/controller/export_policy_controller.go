@@ -129,10 +129,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	for _, sink := range exportPolicy.Spec.Sinks {
 		sinkID := fmt.Sprintf("%s:%s", exportPolicy.UID, sink.Name)
-		sinkConfig, sinkStatus, statusChanged, err := configureSink(ctx, r.Client, sink, exportPolicy)
-		if err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to configure sink %s: %w", sinkID, err)
-		}
+		sinkConfig, sinkStatus, statusChanged := configureSink(ctx, r.Client, sink, exportPolicy)
 
 		anyStatusChanged = anyStatusChanged || statusChanged
 		sinkStatuses = append(sinkStatuses, *sinkStatus)
@@ -206,7 +203,7 @@ func (r *ExportPolicyReconciler) Finalize(ctx context.Context, obj client.Object
 
 // configureSink sets up a sink configuration and returns the sink
 // configuration, status, and whether the status changed
-func configureSink(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]interface{}, *v1alpha1.SinkStatus, bool, error) {
+func configureSink(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]interface{}, *v1alpha1.SinkStatus, bool) {
 	logger := log.FromContext(ctx)
 
 	sinkStatus := getSinkStatus(exportPolicy, sink.Name)
@@ -256,7 +253,6 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 				}
 
 				statusChanged = apimeta.SetStatusCondition(&sinkStatus.Conditions, condition)
-				return nil, sinkStatus, statusChanged, nil
 			}
 
 			sinkConfig["auth"] = map[string]any{
@@ -275,7 +271,7 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 			Message:            "Sink configured successfully",
 		})
 
-		return sinkConfig, sinkStatus, statusChanged, nil
+		return sinkConfig, sinkStatus, statusChanged
 	}
 
 	// Handle unsupported sink type
@@ -287,7 +283,7 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 		Message:            "Sink type not supported",
 	})
 
-	return nil, sinkStatus, statusChanged, nil
+	return nil, sinkStatus, statusChanged
 }
 
 // getSinkStatus retrieves the existing sink status from the export policy if it exists,
