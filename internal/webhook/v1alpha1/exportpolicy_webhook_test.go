@@ -19,11 +19,34 @@ var _ = Describe("ExportPolicy Webhook", func() {
 	)
 
 	BeforeEach(func() {
-		obj = &telemetryv1alpha1.ExportPolicy{}
-		oldObj = &telemetryv1alpha1.ExportPolicy{}
+		obj = &telemetryv1alpha1.ExportPolicy{
+			Spec: telemetryv1alpha1.ExportPolicySpec{
+				Sinks: []telemetryv1alpha1.TelemetrySink{
+					{
+						Sources: []string{"metrics"},
+						PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
+							Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
+							Authentication: &telemetryv1alpha1.Authentication{
+								BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
+									SecretRef: telemetryv1alpha1.LocalSecretReference{
+										Name: "grafana-push-api-token",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		oldObj = obj.DeepCopy()
 		validator = ExportPolicyCustomValidator{}
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
-		defaulter = ExportPolicyCustomDefaulter{}
+		defaulter = ExportPolicyCustomDefaulter{
+			DefaultRetryMaxAttempts:     3,
+			DefaultRetryBackoffDuration: "2s",
+			DefaultBatchTimeout:         "5s",
+			DefaultBatchMaxSize:         500,
+		}
 		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
 		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
@@ -35,15 +58,13 @@ var _ = Describe("ExportPolicy Webhook", func() {
 	})
 
 	Context("When creating ExportPolicy under Defaulting Webhook", func() {
-		// TODO (user): Add logic for defaulting webhooks
-		// Example:
 		It("Should apply defaults when a required field is empty", func() {
 			By("simulating a scenario where defaults should be applied")
 			obj.Spec.Sinks[0].Batch.Timeout = ""
 			By("calling the Default method to apply defaults")
 			Expect(defaulter.Default(ctx, obj)).Error().NotTo(HaveOccurred())
 			By("checking that the default values are set")
-			Expect(obj.Spec.Sinks[0].Batch.Timeout).To(Equal("2s"))
+			Expect(obj.Spec.Sinks[0].Batch.Timeout).To(Equal("5s"))
 		})
 	})
 
