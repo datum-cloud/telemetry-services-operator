@@ -60,10 +60,7 @@ type MetricsService struct {
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx).WithValues(
-		"request_name", req.Name,
-		"request_namespace", req.Namespace,
-	)
+	logger := log.FromContext(ctx)
 
 	// Retrieve the export policy from the cluster and confirm if it exists.
 	exportPolicy := &v1alpha1.ExportPolicy{}
