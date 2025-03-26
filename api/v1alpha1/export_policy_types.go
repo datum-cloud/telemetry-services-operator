@@ -3,7 +3,6 @@
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -170,24 +169,11 @@ type LocalSecretReference struct {
 	Name string `json:"name"`
 }
 
-// Configures how Bearer token authentication should be used to authenticate
-// with a sink's endpoint. This should be used when the endpoint requires an
-// Authorization header in the following format:
-//
-// ``` Authorization: Bearer ... ```
-type BearerTokenAuthentication struct {
-	// Configures which secret is used to retrieve the bearer token to add to the
-	// authorization header.
-	//
-	// +kubebuilder:validation:Required
-	SecretRef corev1.SecretKeySelector `json:"secretRef"`
-}
-
 // Configures how the sink should use Basic Auth for authenticating with a
 // telemetry endpoint.
 type BasicAuthAuthentication struct {
 	// Configures which secret is used to retrieve the bearer token to add to the
-	// authorization header. Secret must be a
+	// authorization header. Secret must be a `kubernetes.io/basic-auth` type.
 	//
 	// +kubebuilder:validation:Required
 	SecretRef LocalSecretReference `json:"secretRef"`
@@ -196,10 +182,6 @@ type BasicAuthAuthentication struct {
 // Configures how the sink will authenticate with the configured endpoint. These
 // options are mutually exclusive.
 type Authentication struct {
-	// Configures the sink to use a Bearer token in the authorization header when
-	// authenticating with the configured endpoint.
-	BearerToken *BearerTokenAuthentication `json:"bearerToken,omitempty"`
-
 	// Configures the sink to use basic auth to authenticate with the configured
 	// endpoint.
 	BasicAuth *BasicAuthAuthentication `json:"basicAuth,omitempty"`
