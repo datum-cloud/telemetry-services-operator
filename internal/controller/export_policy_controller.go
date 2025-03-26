@@ -117,7 +117,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 				"password": r.MetricsService.Password,
 			},
 			"query": map[string]any{
-				"match[]": []string{source.Metrics.Metricsql},
+				"match[]": []string{source.Metrics.MetricsQL},
 			},
 		}
 	}
@@ -209,7 +209,7 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 	sinkStatus := getSinkStatus(exportPolicy, sink.Name)
 	var statusChanged bool
 
-	if sink.PrometheusRemoteWrite != nil {
+	if sink.Target.PrometheusRemoteWrite != nil {
 		// Get all of the sources that are configured for the sink and add them
 		// to the inputs for the prometheus remote write sink.
 		inputs := []string{}
@@ -220,13 +220,13 @@ func configureSink(ctx context.Context, client client.Client, sink v1alpha1.Tele
 		// Configure the prometheus remote write sink
 		sinkConfig := map[string]any{
 			"type":     "prometheus_remote_write",
-			"endpoint": sink.PrometheusRemoteWrite.Endpoint,
+			"endpoint": sink.Target.PrometheusRemoteWrite.Endpoint,
 			"inputs":   inputs,
 		}
 
-		if sink.PrometheusRemoteWrite.Authentication != nil {
+		if sink.Target.PrometheusRemoteWrite.Authentication != nil {
 			// Validate the authentication secret exists and is the correct type
-			secretRef := sink.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef
+			secretRef := sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef
 			secret := &corev1.Secret{}
 			err := client.Get(ctx, types.NamespacedName{
 				Name:      secretRef.Name,

@@ -4,6 +4,7 @@ package controller
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,20 +44,31 @@ var _ = Describe("ExportPolicy Controller", func() {
 							{
 								Name: "metrics",
 								Metrics: &telemetryv1alpha1.MetricSource{
-									Metricsql: `{service_name="gateway.networking.k8s.io", resource_type="gateways"}`,
+									MetricsQL: `{service_name="gateway.networking.k8s.io", resource_type="gateways"}`,
 								},
 							},
 						},
 						Sinks: []telemetryv1alpha1.TelemetrySink{
 							{
+								Name:    "grafana-cloud",
 								Sources: []string{"metrics"},
-								PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
-									Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
-									Authentication: &telemetryv1alpha1.Authentication{
-										BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
-											SecretRef: telemetryv1alpha1.LocalSecretReference{
-												Name: "grafana-push-api-token",
+								Target: &telemetryv1alpha1.SinkTarget{
+									PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
+										Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
+										Authentication: &telemetryv1alpha1.Authentication{
+											BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
+												SecretRef: telemetryv1alpha1.LocalSecretReference{
+													Name: "grafana-push-api-token",
+												},
 											},
+										},
+										Batch: telemetryv1alpha1.Batch{
+											Timeout: metav1.Duration{Duration: 5 * time.Second},
+											MaxSize: 500,
+										},
+										Retry: telemetryv1alpha1.Retry{
+											MaxAttempts:     3,
+											BackoffDuration: metav1.Duration{Duration: 5 * time.Second},
 										},
 									},
 								},

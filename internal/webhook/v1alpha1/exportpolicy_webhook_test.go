@@ -3,10 +3,13 @@
 package v1alpha1
 
 import (
+	"time"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	// TODO (user): Add any additional imports if needed
 )
 
@@ -15,7 +18,6 @@ var _ = Describe("ExportPolicy Webhook", func() {
 		obj       *telemetryv1alpha1.ExportPolicy
 		oldObj    *telemetryv1alpha1.ExportPolicy
 		validator ExportPolicyCustomValidator
-		defaulter ExportPolicyCustomDefaulter
 	)
 
 	BeforeEach(func() {
@@ -24,13 +26,23 @@ var _ = Describe("ExportPolicy Webhook", func() {
 				Sinks: []telemetryv1alpha1.TelemetrySink{
 					{
 						Sources: []string{"metrics"},
-						PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
-							Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
-							Authentication: &telemetryv1alpha1.Authentication{
-								BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
-									SecretRef: telemetryv1alpha1.LocalSecretReference{
-										Name: "grafana-push-api-token",
+						Target: &telemetryv1alpha1.SinkTarget{
+							PrometheusRemoteWrite: &telemetryv1alpha1.PrometheusRemoteWriteSink{
+								Endpoint: "https://otlp-gateway-prod-eu-west-0.grafana.net/otlp",
+								Authentication: &telemetryv1alpha1.Authentication{
+									BasicAuth: &telemetryv1alpha1.BasicAuthAuthentication{
+										SecretRef: telemetryv1alpha1.LocalSecretReference{
+											Name: "grafana-push-api-token",
+										},
 									},
+								},
+								Batch: telemetryv1alpha1.Batch{
+									Timeout: metav1.Duration{Duration: 5 * time.Second},
+									MaxSize: 500,
+								},
+								Retry: telemetryv1alpha1.Retry{
+									MaxAttempts:     3,
+									BackoffDuration: metav1.Duration{Duration: 5 * time.Second},
 								},
 							},
 						},
@@ -41,13 +53,6 @@ var _ = Describe("ExportPolicy Webhook", func() {
 		oldObj = obj.DeepCopy()
 		validator = ExportPolicyCustomValidator{}
 		Expect(validator).NotTo(BeNil(), "Expected validator to be initialized")
-		defaulter = ExportPolicyCustomDefaulter{
-			DefaultRetryMaxAttempts:     3,
-			DefaultRetryBackoffDuration: "2s",
-			DefaultBatchTimeout:         "5s",
-			DefaultBatchMaxSize:         500,
-		}
-		Expect(defaulter).NotTo(BeNil(), "Expected defaulter to be initialized")
 		Expect(oldObj).NotTo(BeNil(), "Expected oldObj to be initialized")
 		Expect(obj).NotTo(BeNil(), "Expected obj to be initialized")
 		// TODO (user): Add any setup logic common to all tests
@@ -55,17 +60,6 @@ var _ = Describe("ExportPolicy Webhook", func() {
 
 	AfterEach(func() {
 		// TODO (user): Add any teardown logic common to all tests
-	})
-
-	Context("When creating ExportPolicy under Defaulting Webhook", func() {
-		It("Should apply defaults when a required field is empty", func() {
-			By("simulating a scenario where defaults should be applied")
-			obj.Spec.Sinks[0].Batch.Timeout = ""
-			By("calling the Default method to apply defaults")
-			Expect(defaulter.Default(ctx, obj)).Error().NotTo(HaveOccurred())
-			By("checking that the default values are set")
-			Expect(obj.Spec.Sinks[0].Batch.Timeout).To(Equal("5s"))
-		})
 	})
 
 	Context("When creating or updating ExportPolicy under Validating Webhook", func() {

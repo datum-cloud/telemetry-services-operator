@@ -53,131 +53,156 @@ spec:
                     now there are no guarantees around delivery of telemetry data, especially if
                     the sink's endpoint is unavailable.
                   properties:
-                    batch:
-                      description: Configures how telemetry data should be batched
-                        before sending to the sink.
-                      properties:
-                        maxSize:
-                          default: 500
-                          description: Maximum number of telemetry entries per batch.
-                          type: integer
-                        timeout:
-                          default: 5s
-                          description: Batch timeout before sending telemetry. Must
-                            be a duration (e.g. 5s).
-                          type: string
-                      required:
-                      - maxSize
-                      - timeout
-                      type: object
                     name:
                       description: |-
                         A name provided to the telemetry sink that's unique within the export
                         policy.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
-                    prometheusRemoteWrite:
-                      description: |-
-                        Configures the export policy to publish telemetry using the Prometheus
-                        Remote Write protocol.
-                      properties:
-                        authentication:
-                          description: Configures how the sink should authenticate
-                            with the HTTP endpoint.
-                          properties:
-                            basicAuth:
-                              description: |-
-                                Configures the sink to use basic auth to authenticate with the configured
-                                endpoint.
-                              properties:
-                                secretRef:
-                                  description: |-
-                                    Configures which secret is used to retrieve the bearer token to add to the
-                                    authorization header. Secret must be a
-                                  properties:
-                                    name:
-                                      description: The name of the secret
-                                      type: string
-                                  required:
-                                  - name
-                                  type: object
-                              required:
-                              - secretRef
-                              type: object
-                            bearerToken:
-                              description: |-
-                                Configures the sink to use a Bearer token in the authorization header when
-                                authenticating with the configured endpoint.
-                              properties:
-                                secretRef:
-                                  description: |-
-                                    Configures which secret is used to retrieve the bearer token to add to the
-                                    authorization header.
-                                  properties:
-                                    key:
-                                      description: The key of the secret to select
-                                        from.  Must be a valid secret key.
-                                      type: string
-                                    name:
-                                      default: ""
-                                      description: |-
-                                        Name of the referent.
-                                        This field is effectively required, but due to backwards compatibility is
-                                        allowed to be empty. Instances of this type with an empty value here are
-                                        almost certainly wrong.
-                                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                      type: string
-                                    optional:
-                                      description: Specify whether the Secret or its
-                                        key must be defined
-                                      type: boolean
-                                  required:
-                                  - key
-                                  type: object
-                                  x-kubernetes-map-type: atomic
-                              required:
-                              - secretRef
-                              type: object
-                          type: object
-                        endpoint:
-                          description: Configure an HTTP endpoint to use for publishing
-                            telemetry data.
-                          type: string
-                      required:
-                      - endpoint
-                      type: object
-                    retry:
-                      description: |-
-                        Configures the export policies' retry behavior when it fails to send
-                        requests to the sink's endpoint. There's no guarantees that the export
-                        policy will retry until success if the endpoint is not available or
-                        configured incorrectly.
-                      properties:
-                        backoffDuration:
-                          default: 5s
-                          description: |-
-                            Backoff duration that should be used to backoff when retrying requests.
-                            Should be a duration string, e.g. `10s`.
-                          type: string
-                        maxAttempts:
-                          default: 3
-                          description: Maximum number of attempts before telemetry
-                            data should be dropped.
-                          type: integer
-                      required:
-                      - backoffDuration
-                      - maxAttempts
-                      type: object
                     sources:
                       description: A list of sources that should be sent to the telemetry
                         sink.
                       items:
                         type: string
+                      maxItems: 20
+                      minItems: 1
                       type: array
+                    target:
+                      description: Configures the target of the telemetry sink.
+                      properties:
+                        prometheusRemoteWrite:
+                          description: |-
+                            Configures the export policy to publish telemetry using the Prometheus
+                            Remote Write protocol.
+                          properties:
+                            authentication:
+                              description: Configures how the sink should authenticate
+                                with the HTTP endpoint.
+                              properties:
+                                basicAuth:
+                                  description: |-
+                                    Configures the sink to use basic auth to authenticate with the configured
+                                    endpoint.
+                                  properties:
+                                    secretRef:
+                                      description: |-
+                                        Configures which secret is used to retrieve the bearer token to add to the
+                                        authorization header. Secret must be a
+                                      properties:
+                                        name:
+                                          description: The name of the secret
+                                          type: string
+                                      required:
+                                      - name
+                                      type: object
+                                  required:
+                                  - secretRef
+                                  type: object
+                                bearerToken:
+                                  description: |-
+                                    Configures the sink to use a Bearer token in the authorization header when
+                                    authenticating with the configured endpoint.
+                                  properties:
+                                    secretRef:
+                                      description: |-
+                                        Configures which secret is used to retrieve the bearer token to add to the
+                                        authorization header.
+                                      properties:
+                                        key:
+                                          description: The key of the secret to select
+                                            from.  Must be a valid secret key.
+                                          type: string
+                                        name:
+                                          default: ""
+                                          description: |-
+                                            Name of the referent.
+                                            This field is effectively required, but due to backwards compatibility is
+                                            allowed to be empty. Instances of this type with an empty value here are
+                                            almost certainly wrong.
+                                            More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                          type: string
+                                        optional:
+                                          description: Specify whether the Secret
+                                            or its key must be defined
+                                          type: boolean
+                                      required:
+                                      - key
+                                      type: object
+                                      x-kubernetes-map-type: atomic
+                                  required:
+                                  - secretRef
+                                  type: object
+                              type: object
+                            batch:
+                              default:
+                                maxSize: 500
+                                timeout: 5s
+                              description: |-
+                                Configures how telemetry data should be batched before sending to the sink.
+                                By default, the sink will batch telemetry data every 5 seconds or when
+                                the batch size reaches 500 entries, whichever comes first.
+                              properties:
+                                maxSize:
+                                  description: Maximum number of telemetry entries
+                                    per batch.
+                                  maximum: 5000
+                                  minimum: 1
+                                  type: integer
+                                timeout:
+                                  description: Batch timeout before sending telemetry.
+                                    Must be a duration (e.g. 5s).
+                                  type: string
+                              required:
+                              - maxSize
+                              - timeout
+                              type: object
+                            endpoint:
+                              description: Configure an HTTP endpoint to use for publishing
+                                telemetry data.
+                              type: string
+                            retry:
+                              default:
+                                backoffDuration: 5s
+                                maxAttempts: 3
+                              description: |-
+                                Configures the export policies' retry behavior when it fails to send
+                                requests to the sink's endpoint. There's no guarantees that the export
+                                policy will retry until success if the endpoint is not available or
+                                configured incorrectly.
+                              properties:
+                                backoffDuration:
+                                  description: Backoff duration that should be used
+                                    to backoff when retrying requests.
+                                  type: string
+                                maxAttempts:
+                                  description: Maximum number of attempts before telemetry
+                                    data should be dropped.
+                                  maximum: 10
+                                  minimum: 1
+                                  type: integer
+                              required:
+                              - backoffDuration
+                              - maxAttempts
+                              type: object
+                          required:
+                          - batch
+                          - endpoint
+                          - retry
+                          type: object
+                      type: object
                   required:
                   - name
                   - sources
+                  - target
                   type: object
+                maxItems: 20
+                minItems: 1
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
               sources:
                 description: |-
                   Defines how the export policy should source telemetry data to publish to
@@ -211,11 +236,19 @@ spec:
                       description: |-
                         A unique name given to the telemetry source within an export policy. Must
                         be a valid DNS label.
+                      maxLength: 63
+                      minLength: 1
+                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
                       type: string
                   required:
                   - name
                   type: object
+                maxItems: 20
+                minItems: 1
                 type: array
+                x-kubernetes-list-map-keys:
+                - name
+                x-kubernetes-list-type: map
             required:
             - sinks
             - sources

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/url"
 	"slices"
-	"time"
 
 	"github.com/VictoriaMetrics/metricsql"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -35,56 +34,7 @@ var forbiddenLabels = []string{
 func SetupExportPolicyWebhookWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewWebhookManagedBy(mgr).For(&telemetryv1alpha1.ExportPolicy{}).
 		WithValidator(&ExportPolicyCustomValidator{}).
-		WithDefaulter(&ExportPolicyCustomDefaulter{
-			DefaultRetryMaxAttempts:     3,
-			DefaultRetryBackoffDuration: "2s",
-			DefaultBatchTimeout:         "5s",
-			DefaultBatchMaxSize:         500,
-		}).
 		Complete()
-}
-
-// +kubebuilder:webhook:path=/mutate-telemetry-datumapis-com-v1alpha1-exportpolicy,mutating=true,failurePolicy=fail,sideEffects=None,groups=telemetry.datumapis.com,resources=exportpolicies,verbs=create;update,versions=v1alpha1,name=mexportpolicy-v1alpha1.kb.io,admissionReviewVersions=v1
-
-// ExportPolicyCustomDefaulter struct is responsible for setting default values on the custom resource of the
-// Kind ExportPolicy when those are created or updated.
-//
-// NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
-// as it is used only for temporary operations and does not need to be deeply copied.
-type ExportPolicyCustomDefaulter struct {
-	DefaultRetryMaxAttempts     int
-	DefaultRetryBackoffDuration string
-	DefaultBatchTimeout         string
-	DefaultBatchMaxSize         int
-}
-
-var _ webhook.CustomDefaulter = &ExportPolicyCustomDefaulter{}
-
-// Default implements webhook.CustomDefaulter so a webhook will be registered for the Kind ExportPolicy.
-func (d *ExportPolicyCustomDefaulter) Default(ctx context.Context, obj runtime.Object) error {
-	exportpolicy, ok := obj.(*telemetryv1alpha1.ExportPolicy)
-
-	if !ok {
-		return fmt.Errorf("expected an ExportPolicy object but got %T", obj)
-	}
-	exportpolicylog.Info("Defaulting for ExportPolicy", "name", exportpolicy.GetName())
-
-	for i := range exportpolicy.Spec.Sinks {
-		if exportpolicy.Spec.Sinks[i].Retry.MaxAttempts == 0 {
-			exportpolicy.Spec.Sinks[i].Retry.MaxAttempts = d.DefaultRetryMaxAttempts
-		}
-		if exportpolicy.Spec.Sinks[i].Retry.BackoffDuration == "" {
-			exportpolicy.Spec.Sinks[i].Retry.BackoffDuration = d.DefaultRetryBackoffDuration
-		}
-		if exportpolicy.Spec.Sinks[i].Batch.MaxSize == 0 {
-			exportpolicy.Spec.Sinks[i].Batch.MaxSize = d.DefaultBatchMaxSize
-		}
-		if exportpolicy.Spec.Sinks[i].Batch.Timeout == "" {
-			exportpolicy.Spec.Sinks[i].Batch.Timeout = d.DefaultBatchTimeout
-		}
-	}
-
-	return nil
 }
 
 // NOTE: The 'path' attribute must follow a specific pattern and should not be modified directly here.
@@ -97,7 +47,6 @@ func (d *ExportPolicyCustomDefaulter) Default(ctx context.Context, obj runtime.O
 // NOTE: The +kubebuilder:object:generate=false marker prevents controller-gen from generating DeepCopy methods,
 // as this struct is used only for temporary operations and does not need to be deeply copied.
 type ExportPolicyCustomValidator struct {
-	// TODO(user): Add more fields as needed for validation
 }
 
 var _ webhook.CustomValidator = &ExportPolicyCustomValidator{}
@@ -140,8 +89,6 @@ func (v *ExportPolicyCustomValidator) ValidateDelete(ctx context.Context, obj ru
 	}
 	exportpolicylog.Info("Validation for ExportPolicy upon deletion", "name", exportpolicy.GetName())
 
-	// TODO(user): fill in your validation logic upon object deletion.
-
 	return nil, nil
 }
 
@@ -174,8 +121,17 @@ func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicyS
 		}
 	}
 
-	for _, sink := range spec.Sinks {
-		errs = append(errs, validateTelemetrySink(fieldPath.Child("sink"), sink)...)
+	sinkNames := map[string]struct{}{}
+	for index, sink := range spec.Sinks {
+		// Validate that the sink name is unique
+		sinkPath := fieldPath.Child("sinks").Index(index)
+		if _, set := sinkNames[sink.Name]; set {
+			errs = append(errs, field.Duplicate(sinkPath.Child("name"), sink.Name))
+		} else {
+			sinkNames[sink.Name] = struct{}{}
+		}
+
+		errs = append(errs, validateTelemetrySink(sinkPath, sink)...)
 	}
 
 	return errs
@@ -183,19 +139,19 @@ func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicyS
 
 func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field.ErrorList {
 	var errs field.ErrorList
-	if metrics.Metricsql == "" {
+	if metrics.MetricsQL == "" {
 		errs = append(errs, field.Required(path.Child("metricsql"), "A metricsql query is required. Additional metric options will be supported in the future."))
 	} else {
-		expr, err := metricsql.Parse(metrics.Metricsql)
+		expr, err := metricsql.Parse(metrics.MetricsQL)
 		if err != nil {
-			errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.Metricsql, fmt.Sprintf("Invalid metricsql query provided: %s", err)))
+			errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.MetricsQL, fmt.Sprintf("Invalid metricsql query provided: %s", err)))
 		} else if metricExpr, ok := expr.(*metricsql.MetricExpr); !ok {
-			errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.Metricsql, `Only metrics queries in the format '{label="value"}' are supported`))
+			errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.MetricsQL, `Only metrics queries in the format '{label="value"}' are supported`))
 		} else {
 			for _, labelFilters := range metricExpr.LabelFilterss {
 				for _, labelFilter := range labelFilters {
 					if slices.Contains(forbiddenLabels, labelFilter.Label) {
-						errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.Metricsql, fmt.Sprintf("The metricsql cannot contain the label '%s'", labelFilter.Label)))
+						errs = append(errs, field.Invalid(path.Child("metricsql"), metrics.MetricsQL, fmt.Sprintf("The metricsql cannot contain the label '%s'", labelFilter.Label)))
 					}
 				}
 			}
@@ -207,30 +163,16 @@ func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field
 
 func validateTelemetrySink(path *field.Path, sink v1alpha1.TelemetrySink) field.ErrorList {
 	var errs field.ErrorList
+	errs = append(errs, validateTelemetrySinkTarget(path.Child("target"), *sink.Target)...)
+	return errs
+}
+
+func validateTelemetrySinkTarget(path *field.Path, sink v1alpha1.SinkTarget) field.ErrorList {
+	var errs field.ErrorList
 	if sink.PrometheusRemoteWrite == nil {
 		errs = append(errs, field.Required(path.Child("prometheusRemoteWrite"), ""))
 	} else {
 		errs = append(errs, validatePrometheusRemoteWrite(path.Child("prometheusRemoteWrite"), *sink.PrometheusRemoteWrite)...)
-	}
-
-	batchPath := path.Child("batch")
-	if sink.Batch.MaxSize > 1000 || sink.Batch.MaxSize < 1 {
-		errs = append(errs, field.Invalid(batchPath.Child("maxSize"), sink.Batch.MaxSize, "must be between 1 and 1000"))
-	}
-	if timeout, err := time.ParseDuration(sink.Batch.Timeout); err != nil {
-		errs = append(errs, field.Invalid(batchPath.Child("timeout"), sink.Batch.Timeout, "must be a valid duration string (e.g. '5s')"))
-	} else if timeout > 10*time.Second || timeout < time.Second {
-		errs = append(errs, field.Invalid(batchPath.Child("timeout"), sink.Batch.Timeout, "must be between 1s and 10s"))
-	}
-
-	retryPath := path.Child("retry")
-	if sink.Retry.MaxAttempts > 5 || sink.Retry.MaxAttempts < 1 {
-		errs = append(errs, field.Invalid(retryPath.Child("maxAttempts"), sink.Retry.MaxAttempts, "must be between 1 and 5"))
-	}
-	if backoffDuration, err := time.ParseDuration(sink.Retry.BackoffDuration); err != nil {
-		errs = append(errs, field.Invalid(retryPath.Child("backoffDuration"), sink.Retry.BackoffDuration, "must be a valid duration string (e.g. '5s')"))
-	} else if backoffDuration > 10*time.Second || backoffDuration < time.Second {
-		errs = append(errs, field.Invalid(retryPath.Child("backoffDuration"), sink.Retry.BackoffDuration, "must be between 1s and 10s"))
 	}
 
 	return errs
