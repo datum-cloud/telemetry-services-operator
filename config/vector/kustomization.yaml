@@ -7,9 +7,3 @@ configMapGenerator:
   - name: base-vector-config
     files:
       - base-vector-config.yaml
-  - name: test-vector-config
-    files:
-      - test-vector-config.yaml
-    options:
-      labels:
-        export-policy-vector-config: "true"
