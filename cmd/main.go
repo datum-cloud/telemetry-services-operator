@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -49,7 +51,7 @@ import (
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 	"go.datum.net/telemetry-services-operator/internal/controller"
 	"go.datum.net/telemetry-services-operator/internal/providers"
-	webhooktelemetryv1alpha1 "go.datum.net/telemetry-services-operator/internal/webhook/v1alpha1"
+	mcdatum "go.datum.net/telemetry-services-operator/internal/providers/datum"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -302,28 +304,15 @@ func main() {
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
-			os.Exit(1)
-		}
+		// TODO: Re-enable webhooks once the webhook server is properly configured
+		//       to support multicluster.
+		//
+		// if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+		// 	setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
+		// 	os.Exit(1)
+		// }
 	}
 	// +kubebuilder:scaffold:builder
-
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
-
-	if webhookCertWatcher != nil {
-		setupLog.Info("Adding webhook certificate watcher to manager")
-		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -334,9 +323,52 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+	ctx := ctrl.SetupSignalHandler()
+
+	if clusterDiscoveryMode == providers.ProviderSingle {
+		setupLog.Info("engaging cluster for single cluster provider")
+		// Pending feedback on https://github.com/multicluster-runtime/multicluster-runtime/pull/17#issue-2911191237
+		// to determine if the provider's Run function should be calling Engage
+		if err := mgr.Engage(ctx, "single", singleCluster); err != nil {
+			setupLog.Error(err, "failed engaging cluster")
+			os.Exit(1)
+		}
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	if localManager != nil {
+		setupLog.Info("starting local manager")
+		g.Go(func() error {
+			return ignoreCanceled(localManager.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting cluster discovery provider")
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+
+	if singleCluster != nil {
+		setupLog.Info("starting cluster for single cluster provider")
+		g.Go(func() error {
+			return ignoreCanceled(singleCluster.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting multicluster manager")
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+
+	if err := g.Wait(); err != nil {
+		setupLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
