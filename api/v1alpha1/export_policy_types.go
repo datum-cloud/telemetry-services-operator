@@ -3,7 +3,6 @@
 package v1alpha1
 
 import (
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -19,10 +18,22 @@ type ExportPolicySpec struct {
 	// the configured sinks. An export policy can define multiple telemetry
 	// sources. The export policy will **not** de-duplicate telemetry data that
 	// matches multiple sources.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
+	// +listType=map
+	// +listMapKey=name
 	Sources []TelemetrySource `json:"sources"`
 
 	// Configures how telemetry data should be sent to a third-party telemetry
 	// platforms.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
+	// +listType=map
+	// +listMapKey=name
 	Sinks []TelemetrySink `json:"sinks"`
 }
 
@@ -94,7 +105,7 @@ type MetricSource struct {
 	// ``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
 	//
 	// See: https://docs.victoriametrics.com/metricsql/
-	Metricsql string `json:"metricsql,omitempty"`
+	MetricsQL string `json:"metricsql,omitempty"`
 }
 
 // Defines how the export policy should source telemetry data from resources on
@@ -102,6 +113,11 @@ type MetricSource struct {
 type TelemetrySource struct {
 	// A unique name given to the telemetry source within an export policy. Must
 	// be a valid DNS label.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
 	Name string `json:"name"`
 
 	// Configures how the telemetry source should retrieve metric data from the
@@ -115,22 +131,30 @@ type TelemetrySource struct {
 type TelemetrySink struct {
 	// A name provided to the telemetry sink that's unique within the export
 	// policy.
+	//
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	// +kubebuilder:validation:MaxLength=63
+	// +kubebuilder:validation:Pattern=^[a-z0-9]([-a-z0-9]*[a-z0-9])?$
 	Name string `json:"name"`
-
-	// Configures how telemetry data should be batched before sending to the sink.
-	Batch Batch `json:"batch,omitempty"`
-
-	// Configures the export policies' retry behavior when it fails to send
-	// requests to the sink's endpoint. There's no guarantees that the export
-	// policy will retry until success if the endpoint is not available or
-	// configured incorrectly.
-	Retry Retry `json:"retry,omitempty"`
 
 	// A list of sources that should be sent to the telemetry sink.
 	//
 	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	// +kubebuilder:validation:MaxItems=20
 	Sources []string `json:"sources"`
 
+	// Configures the target of the telemetry sink.
+	//
+	// +kubebuilder:validation:Required
+	Target *SinkTarget `json:"target"`
+}
+
+// Configures the target of the telemetry sink. The target defines the protocol
+// that's used to send telemetry data to the sink. Only one target protocol can
+// be configured per sink.
+type SinkTarget struct {
 	// Configures the export policy to publish telemetry using the Prometheus
 	// Remote Write protocol.
 	PrometheusRemoteWrite *PrometheusRemoteWriteSink `json:"prometheusRemoteWrite,omitempty"`
@@ -145,24 +169,11 @@ type LocalSecretReference struct {
 	Name string `json:"name"`
 }
 
-// Configures how Bearer token authentication should be used to authenticate
-// with a sink's endpoint. This should be used when the endpoint requires an
-// Authorization header in the following format:
-//
-// ``` Authorization: Bearer ... ```
-type BearerTokenAuthentication struct {
-	// Configures which secret is used to retrieve the bearer token to add to the
-	// authorization header.
-	//
-	// +kubebuilder:validation:Required
-	SecretRef corev1.SecretKeySelector `json:"secretRef"`
-}
-
 // Configures how the sink should use Basic Auth for authenticating with a
 // telemetry endpoint.
 type BasicAuthAuthentication struct {
 	// Configures which secret is used to retrieve the bearer token to add to the
-	// authorization header. Secret must be a
+	// authorization header. Secret must be a `kubernetes.io/basic-auth` type.
 	//
 	// +kubebuilder:validation:Required
 	SecretRef LocalSecretReference `json:"secretRef"`
@@ -171,10 +182,6 @@ type BasicAuthAuthentication struct {
 // Configures how the sink will authenticate with the configured endpoint. These
 // options are mutually exclusive.
 type Authentication struct {
-	// Configures the sink to use a Bearer token in the authorization header when
-	// authenticating with the configured endpoint.
-	BearerToken *BearerTokenAuthentication `json:"bearerToken,omitempty"`
-
 	// Configures the sink to use basic auth to authenticate with the configured
 	// endpoint.
 	BasicAuth *BasicAuthAuthentication `json:"basicAuth,omitempty"`
@@ -189,6 +196,21 @@ type PrometheusRemoteWriteSink struct {
 	//
 	// +kubebuilder:validation:Required
 	Endpoint string `json:"endpoint"`
+
+	// Configures how telemetry data should be batched before sending to the sink.
+	// By default, the sink will batch telemetry data every 5 seconds or when
+	// the batch size reaches 500 entries, whichever comes first.
+	//
+	// +kubebuilder:default={timeout: "5s", maxSize: 500}
+	Batch Batch `json:"batch"`
+
+	// Configures the export policies' retry behavior when it fails to send
+	// requests to the sink's endpoint. There's no guarantees that the export
+	// policy will retry until success if the endpoint is not available or
+	// configured incorrectly.
+	//
+	// +kubebuilder:default={maxAttempts: 3, backoffDuration: "5s"}
+	Retry Retry `json:"retry"`
 }
 
 // Configures the batching behavior the sink will use to batch requests before
@@ -196,11 +218,13 @@ type PrometheusRemoteWriteSink struct {
 type Batch struct {
 	// Batch timeout before sending telemetry. Must be a duration (e.g. 5s).
 	//
-	// +kubebuilder:default="5s"
-	Timeout string `json:"timeout"`
+	// +kubebuilder:validation:Required
+	Timeout metav1.Duration `json:"timeout"`
 	// Maximum number of telemetry entries per batch.
 	//
-	// +kubebuilder:default=500
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=5000
 	MaxSize int `json:"maxSize"`
 }
 
@@ -209,13 +233,14 @@ type Batch struct {
 type Retry struct {
 	// Maximum number of attempts before telemetry data should be dropped.
 	//
-	// +kubebuilder:default=3
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=10
 	MaxAttempts int `json:"maxAttempts"`
 	// Backoff duration that should be used to backoff when retrying requests.
-	// Should be a duration string, e.g. `10s`.
 	//
-	// +kubebuilder:default="5s"
-	BackoffDuration string `json:"backoffDuration"`
+	// +kubebuilder:validation:Required
+	BackoffDuration metav1.Duration `json:"backoffDuration"`
 }
 
 func init() {

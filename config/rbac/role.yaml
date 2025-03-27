@@ -5,6 +5,15 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - update
+- apiGroups:
   - telemetry.datumapis.com
   resources:
   - exportpolicies
@@ -16,12 +25,6 @@ rules:
   - patch
   - update
   - watch
-- apiGroups:
-  - telemetry.datumapis.com
-  resources:
-  - exportpolicies/finalizers
-  verbs:
-  - update
 - apiGroups:
   - telemetry.datumapis.com
   resources:
