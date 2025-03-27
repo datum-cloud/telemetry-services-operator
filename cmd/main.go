@@ -17,28 +17,38 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
-
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
+	mckind "sigs.k8s.io/multicluster-runtime/providers/kind"
+	mcsingle "sigs.k8s.io/multicluster-runtime/providers/single"
 
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 	"go.datum.net/telemetry-services-operator/internal/controller"
+	"go.datum.net/telemetry-services-operator/internal/providers"
 	webhooktelemetryv1alpha1 "go.datum.net/telemetry-services-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
@@ -66,6 +76,7 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var clusterDiscoveryMode string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -94,6 +105,8 @@ func main() {
 		"true",
 		"The value of the label that will be added to the vector config secret.",
 	)
+	flag.StringVar(&clusterDiscoveryMode, "cluster-discovery-mode", "single",
+		"Method to discover clusters. Allowed values are: "+strings.Join(providers.AllowedProviders, ","))
 	opts := zap.Options{
 		Development: true,
 	}
@@ -191,7 +204,67 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	cfg := ctrl.GetConfigOrDie()
+
+	var localManager manager.Manager
+	var err error
+
+	var provider interface {
+		multicluster.Provider
+		// TODO(jreese) see if Run should be defined in the Provider interface
+		Run(context.Context, mcmanager.Manager) error
+	}
+	var singleCluster cluster.Cluster
+
+	switch clusterDiscoveryMode {
+	case providers.ProviderSingle:
+		singleCluster, err = cluster.New(cfg, func(o *cluster.Options) {
+			o.Scheme = scheme
+		})
+		if err != nil {
+			setupLog.Error(err, "failed creating cluster")
+			os.Exit(1)
+		}
+		provider = mcsingle.New("single", singleCluster)
+
+	case providers.ProviderDatum:
+		localManager, err = manager.New(cfg, manager.Options{
+			Client: client.Options{
+				Cache: &client.CacheOptions{
+					Unstructured: true,
+				},
+			},
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to set up overall controller manager")
+			os.Exit(1)
+		}
+
+		provider, err = mcdatum.New(localManager, mcdatum.Options{
+			ClusterOptions: []cluster.Option{
+				func(o *cluster.Options) {
+					o.Scheme = scheme
+				},
+			},
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to create datum project provider")
+			os.Exit(1)
+		}
+
+	case providers.ProviderKind:
+		provider = mckind.New()
+
+	default:
+		setupLog.Error(fmt.Errorf(
+			"unsupported cluster discovery mode. Got %q, expected one of %s",
+			clusterDiscoveryMode,
+			strings.Join(providers.AllowedProviders, ","),
+		), "")
+		os.Exit(1)
+	}
+
+	mgr, err := mcmanager.New(cfg, provider, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -216,8 +289,6 @@ func main() {
 	}
 
 	if err = (&controller.ExportPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
 		MetricsService: controller.MetricsService{
 			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
 			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
