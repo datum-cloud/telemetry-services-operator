@@ -28,6 +28,7 @@ import (
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
+
 	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -370,6 +371,10 @@ func main() {
 	setupLog.Info("starting cluster discovery provider")
 	g.Go(func() error {
 		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+
+	g.Go(func() error {
+		return ignoreCanceled(downstreamCluster.Start(ctx))
 	})
 
 	if singleCluster != nil {

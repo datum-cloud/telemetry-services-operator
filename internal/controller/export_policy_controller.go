@@ -71,6 +71,8 @@ type MetricsService struct {
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
+	logger.Info("reconciling export policy")
+
 	cluster, err := r.mgr.GetCluster(ctx, req.ClusterName)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to get cluster: %w", err)
@@ -84,7 +86,6 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 		}
 		return ctrl.Result{}, err
 	}
-	logger.Info("reconciling export policy")
 
 	// Validate that the export policy configuration is valid and update the
 	// status of the export policy to reflect the status of the sinks.
@@ -97,7 +98,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 
 	// Create the vector configuration for the export policy. This will skip over
 	// any source or sink configurations that are not valid.
-	vectorConfig := r.createVectorConfiguration(ctx, cluster.GetClient(), exportPolicy)
+	vectorConfig := r.createVectorConfiguration(ctx, r.DownstreamClient, exportPolicy)
 
 	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
@@ -249,8 +250,9 @@ func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatu
 // SetupWithManager sets up the controller with the Manager.
 func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 	r.mgr = mgr
+
 	return mcbuilder.ControllerManagedBy(mgr).
-		For(&v1alpha1.ExportPolicy{}).
+		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
 		Named("exportpolicy").
 		Complete(r)
 }

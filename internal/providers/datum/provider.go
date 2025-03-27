@@ -163,7 +163,12 @@ func (p *Provider) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to parse host from rest config: %w", err)
 	}
-	apiHost.Path = fmt.Sprintf("/apis/resourcemanager.datumapis.com/v1alpha/projects/%s/control-plane", project.GetName())
+
+	// Use the service address for the API server.
+	// TODO: We need to figur eout a way to make this easier to connect to so it's
+	//       not embedded into the client.
+	apiHost.Host = fmt.Sprintf("datum-apiserver.project-%s.svc.cluster.local:6443", project.GetUID())
+	apiHost.Path = ""
 	cfg.Host = apiHost.String()
 
 	// create cluster.
