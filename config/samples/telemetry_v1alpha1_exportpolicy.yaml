@@ -1,0 +1,40 @@
+apiVersion: telemetry.datumapis.com/v1alpha1
+kind: ExportPolicy
+metadata:
+  labels:
+    app.kubernetes.io/name: telemetry-services-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: exportpolicy-sample
+spec:
+  # Defines the telemetry sources that should be exported. An export policy can
+  # define multiple telemetry sources. Telemetry data will **not** be de-duped
+  # if its selected from multiple sources.
+  sources:
+    - name: "gateway-metrics"  # Descriptive name for the source
+      # Source metrics from the Datum Cloud platform
+      metrics:
+        # The options in this section are expected to be mutually exclusive. Users
+        # can either leverage metricsql or resource selectors.
+        #
+        # This option allows user to supply a metricsql query if they're already
+        # familiar with using metricsql queries to select metric data from
+        # Victoria Metrics.
+        metricsql: |
+          {job="telemetry-system/envoy-proxies"}
+  sinks:
+    - name: grafana-cloud-metrics
+      sources:
+        - gateway-metrics
+      target:
+        prometheusRemoteWrite:
+          endpoint: "https://prometheus-prod-56-prod-us-east-2.grafana.net/api/prom/push"
+          authentication:
+            basicAuth:
+              secretRef:
+                name: "grafana-cloud-credentials"
+          batch:
+            timeout: 5s     # Batch timeout before sending telemetry
+            maxSize: 500    # Maximum number of telemetry entries per batch
+          retry:
+            maxAttempts: 3  # Maximum retry attempts
+            backoffDuration: 2s     # Delay between retry attempts

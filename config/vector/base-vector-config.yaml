@@ -1,0 +1,19 @@
+api:
+  enabled: false
+sources:
+  internal_logs:
+    type: internal_logs
+  internal_metrics:
+    type: internal_metrics
+sinks:
+  console:
+    type: console
+    inputs:
+      - internal_logs
+    encoding:
+      codec: json
+  prometheus_export:
+    type: prometheus_exporter
+    inputs:
+      - internal_metrics
+    address: 0.0.0.0:9598

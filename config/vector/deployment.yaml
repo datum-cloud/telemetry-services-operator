@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vector
+  template:
+    metadata:
+      labels:
+        app: vector
+    spec:
+      serviceAccountName: vector
+      automountServiceAccountToken: true
+      containers:
+        - name: vector
+          image: timberio/vector:0.45.0-distroless-static
+          args:
+          - --log-format=json
+          - --verbose
+          - --watch-config
+          - --config-dir
+          - /etc/vector/
+          volumeMounts:
+            - name: base-config
+              mountPath: /etc/vector/base-vector-config.yaml
+              subPath: base-vector-config.yaml
+            - name: config-volume
+              mountPath: /etc/vector
+          ports:
+            - containerPort: 9598
+              name: metrics
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        - name: sidecar
+          image: kiwigrid/k8s-sidecar:latest
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/vector
+          env:
+            - name: NAMESPACE
+              value: ALL
+            - name: LABEL
+              value: "telemetry.datumapis.com/vector-export-policy-config"
+            - name: LABEL_VALUE
+              value: "true"
+            - name: FOLDER
+              value: /etc/vector/
+            - name: RESOURCE
+              value: both
+      volumes:
+        - name: base-config
+          configMap:
+            name: base-vector-config
+        - name: config-volume
+          emptyDir: {}
