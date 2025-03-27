@@ -33,6 +33,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -79,6 +80,8 @@ func main() {
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
 	var clusterDiscoveryMode string
+	var vectorConfigurationNamespace string
+	var upstreamClusterKubeconfig string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -109,6 +112,9 @@ func main() {
 	)
 	flag.StringVar(&clusterDiscoveryMode, "cluster-discovery-mode", "single",
 		"Method to discover clusters. Allowed values are: "+strings.Join(providers.AllowedProviders, ","))
+	flag.StringVar(&vectorConfigurationNamespace, "vector-config-namespace", "default",
+		"The namespace in the downstream cluster to create the vector config secret in.")
+	flag.StringVar(&upstreamClusterKubeconfig, "upstream-cluster-kubeconfig", "", "The path to the kubeconfig file to use for connecting to the upstream cluster.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -206,10 +212,26 @@ func main() {
 		})
 	}
 
-	cfg := ctrl.GetConfigOrDie()
+	upstreamClusterConfig, err := clientcmd.BuildConfigFromFlags("", upstreamClusterKubeconfig)
+	if err != nil {
+		setupLog.Error(err, "unable to load control plane kubeconfig")
+		os.Exit(1)
+	}
+
+	// Retrieve the configuration for the cluster that the operator is deployed
+	// in. This is the cluster that will have the vector config secret created
+	// for telemetry services.
+	downstreamClusterConfig := ctrl.GetConfigOrDie()
+
+	downstreamCluster, err := cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
+		o.Scheme = scheme
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to construct downstream luster")
+		os.Exit(1)
+	}
 
 	var localManager manager.Manager
-	var err error
 
 	var provider interface {
 		multicluster.Provider
@@ -220,7 +242,7 @@ func main() {
 
 	switch clusterDiscoveryMode {
 	case providers.ProviderSingle:
-		singleCluster, err = cluster.New(cfg, func(o *cluster.Options) {
+		singleCluster, err = cluster.New(upstreamClusterConfig, func(o *cluster.Options) {
 			o.Scheme = scheme
 		})
 		if err != nil {
@@ -230,7 +252,7 @@ func main() {
 		provider = mcsingle.New("single", singleCluster)
 
 	case providers.ProviderDatum:
-		localManager, err = manager.New(cfg, manager.Options{
+		localManager, err = manager.New(upstreamClusterConfig, manager.Options{
 			Client: client.Options{
 				Cache: &client.CacheOptions{
 					Unstructured: true,
@@ -266,7 +288,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	mgr, err := mcmanager.New(cfg, provider, ctrl.Options{
+	mgr, err := mcmanager.New(upstreamClusterConfig, provider, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -291,6 +313,8 @@ func main() {
 	}
 
 	if err = (&controller.ExportPolicyReconciler{
+		DownstreamClient:                downstreamCluster.GetClient(),
+		DownstreamVectorConfigNamespace: vectorConfigurationNamespace,
 		MetricsService: controller.MetricsService{
 			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
 			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),

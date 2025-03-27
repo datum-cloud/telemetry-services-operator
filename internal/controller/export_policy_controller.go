@@ -26,6 +26,14 @@ import (
 type ExportPolicyReconciler struct {
 	mgr mcmanager.Manager
 
+	// The client for the downstream cluster that vector configurations will be
+	// created in.
+	DownstreamClient client.Client
+
+	// The namespace in the downstream cluster that vector configurations will be
+	// created in.
+	DownstreamVectorConfigNamespace string
+
 	// The metrics service that can be used to query metrics from the telemetry
 	// system.
 	MetricsService MetricsService
@@ -110,12 +118,14 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, cluster.GetClient(), configSecret, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.DownstreamClient, configSecret, func() error {
 		// Set the owner reference for the vector config secret so it is deleted
 		// when the export policy is deleted.
-		if err := controllerutil.SetControllerReference(exportPolicy, configSecret, cluster.GetScheme()); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
+		//
+		// TODO: Determine how we want to handle deletion in upstream clusters
+		// if err := controllerutil.SetControllerReference(exportPolicy, configSecret, cluster.GetScheme()); err != nil {
+		// 	return fmt.Errorf("failed to set controller reference: %w", err)
+		// }
 
 		configSecret.Data = map[string][]byte{
 			fmt.Sprintf("%s.json", exportPolicy.UID): vectorConfigJSON,
