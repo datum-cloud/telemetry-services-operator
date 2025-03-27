@@ -83,8 +83,17 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
-	flag.StringVar(&vectorConfigLabelKey, "vector-config-label-key", "telemetry.datumapis.com/vector-export-policy-config", "The key of the label that will be added to the vector config secret.")
-	flag.StringVar(&vectorConfigLabelValue, "vector-config-label-value", "true", "The value of the label that will be added to the vector config secret.")
+	flag.StringVar(
+		&vectorConfigLabelKey,
+		"vector-config-label-key",
+		"telemetry.datumapis.com/vector-export-policy-config",
+		"The key of the label that will be added to the vector config secret.",
+	)
+	flag.StringVar(&vectorConfigLabelValue,
+		"vector-config-label-value",
+		"true",
+		"The value of the label that will be added to the vector config secret.",
+	)
 	opts := zap.Options{
 		Development: true,
 	}

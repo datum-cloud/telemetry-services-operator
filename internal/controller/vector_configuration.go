@@ -23,7 +23,7 @@ import (
 // policy configuration is validated before this function is called and that the
 // status of the export policy will be updated to highlight any issues with the
 // export policy configuration.
-func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) (map[string]any, error) {
+func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) map[string]any {
 	// Create a vector configuration for each source and sink combination
 	vectorConfig := map[string]any{
 		"sources": make(map[string]any),
@@ -65,7 +65,7 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 		sinks[fmt.Sprintf("%s:%s", exportPolicy.UID, sink.Name)] = sinkConfig
 	}
 
-	return vectorConfig, nil
+	return vectorConfig
 }
 
 // getSinkVectorConfig creates a vector configuration for the given sink.

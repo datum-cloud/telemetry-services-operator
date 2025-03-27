@@ -37,8 +37,8 @@ type ExportPolicyReconciler struct {
 // MetricsService is a struct that contains the information needed to configure
 // a metrics service.
 type MetricsService struct {
-	// The endpoint of the metrics service that can be used to query metrics
-	// from the telemetry system.
+	// The endpoint of the metrics service that can be used to query metrics from
+	// the telemetry system.
 	Endpoint string
 	// The username for the metrics service.
 	Username string
@@ -57,8 +57,8 @@ type MetricsService struct {
 // named `export-policy-vector-config-<export-policy-uid>.json`. The vector
 // config secret will be created in the same namespace as the export policy.
 //
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
+// For more details, check Reconcile and its Result here: -
+// https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -74,23 +74,18 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Validate that the export policy configuration is valid and update the
 	// status of the export policy to reflect the status of the sinks.
-	if statusChanged, err := r.validateExportPolicy(ctx, exportPolicy); err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to validate export policy: %w", err)
-	} else if statusChanged {
+	if r.reconcileExportPolicyStatus(ctx, exportPolicy) {
 		logger.Info("export policy status changed, updating status")
 		if err := r.Client.Status().Update(ctx, exportPolicy); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update export policy status: %w", err)
 		}
 	}
 
-	// Configure the export policy and update the status information for the sink
-	// based on whether the sink was correctly configured.
-	vectorConfig, err := r.createVectorConfiguration(ctx, exportPolicy)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("failed to create vector configuration: %w", err)
-	}
+	// Create the vector configuration for the export policy. This will skip over
+	// any source or sink configurations that are not valid.
+	vectorConfig := r.createVectorConfiguration(ctx, exportPolicy)
 
-	// Create or update the vector config secret
+	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to marshal vector config: %w", err)
@@ -126,9 +121,9 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	return ctrl.Result{}, err
 }
 
-// validateExportPolicy validates the export policy configuration and updates the
-// status of the export policy to reflect the status of the sinks.
-func (r *ExportPolicyReconciler) validateExportPolicy(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) (bool, error) {
+// reconcileExportPolicyStatus validates the export policy configuration and
+// updates the status of the export policy to reflect the status of the sinks.
+func (r *ExportPolicyReconciler) reconcileExportPolicyStatus(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) bool {
 	statusChanged := false
 	sinkStatuses := []v1alpha1.SinkStatus{}
 	// Validate each of the sinks in the export policy have a valid configuration
@@ -181,13 +176,11 @@ func (r *ExportPolicyReconciler) validateExportPolicy(ctx context.Context, expor
 
 	// Update the overall status conditions of the export policy based on the
 	// status of its sinks.
-	statusChanged = updateExportPolicyConditions(exportPolicy, sinkStatuses) || statusChanged
-
-	return statusChanged, nil
+	return updateExportPolicyConditions(exportPolicy, sinkStatuses) || statusChanged
 }
 
-// getSinkStatus retrieves the existing sink status from the export policy if it exists,
-// otherwise returns a new sink status with the given name
+// getSinkStatus retrieves the existing sink status from the export policy if it
+// exists, otherwise returns a new sink status with the given name
 func getSinkStatus(exportPolicy *v1alpha1.ExportPolicy, sinkName string) *v1alpha1.SinkStatus {
 	for _, existingStatus := range exportPolicy.Status.Sinks {
 		if existingStatus.Name == sinkName {
@@ -200,8 +193,9 @@ func getSinkStatus(exportPolicy *v1alpha1.ExportPolicy, sinkName string) *v1alph
 	}
 }
 
-// updateExportPolicyConditions updates the overall status conditions of the export policy
-// based on the status of its sinks. Returns true if conditions were changed.
+// updateExportPolicyStatus updates the overall status conditions of the
+// export policy based on the status of its sinks. Returns true if conditions
+// were changed.
 func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatuses []v1alpha1.SinkStatus) bool {
 	var acceptedCount int
 	for _, sinkStatus := range sinkStatuses {

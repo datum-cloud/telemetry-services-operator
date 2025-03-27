@@ -17,7 +17,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	"go.datum.net/telemetry-services-operator/api/v1alpha1"
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 )
 
@@ -92,11 +91,11 @@ func (v *ExportPolicyCustomValidator) ValidateDelete(ctx context.Context, obj ru
 	return nil, nil
 }
 
-func validateExportPolicy(policy *v1alpha1.ExportPolicy) field.ErrorList {
+func validateExportPolicy(policy *telemetryv1alpha1.ExportPolicy) field.ErrorList {
 	return validateExportPolicySpec(field.NewPath("spec"), policy.Spec)
 }
 
-func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicySpec) field.ErrorList {
+func validateExportPolicySpec(fieldPath *field.Path, spec telemetryv1alpha1.ExportPolicySpec) field.ErrorList {
 	var errs field.ErrorList
 	if len(spec.Sources) == 0 {
 		errs = append(errs, field.Required(fieldPath.Child("sources"), "At least one telemetry source is required"))
@@ -137,7 +136,7 @@ func validateExportPolicySpec(fieldPath *field.Path, spec v1alpha1.ExportPolicyS
 	return errs
 }
 
-func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field.ErrorList {
+func validateMetricSource(path *field.Path, metrics telemetryv1alpha1.MetricSource) field.ErrorList {
 	var errs field.ErrorList
 	if metrics.MetricsQL == "" {
 		errs = append(errs, field.Required(path.Child("metricsql"), "A metricsql query is required. Additional metric options will be supported in the future."))
@@ -161,13 +160,13 @@ func validateMetricSource(path *field.Path, metrics v1alpha1.MetricSource) field
 	return errs
 }
 
-func validateTelemetrySink(path *field.Path, sink v1alpha1.TelemetrySink) field.ErrorList {
+func validateTelemetrySink(path *field.Path, sink telemetryv1alpha1.TelemetrySink) field.ErrorList {
 	var errs field.ErrorList
 	errs = append(errs, validateTelemetrySinkTarget(path.Child("target"), *sink.Target)...)
 	return errs
 }
 
-func validateTelemetrySinkTarget(path *field.Path, sink v1alpha1.SinkTarget) field.ErrorList {
+func validateTelemetrySinkTarget(path *field.Path, sink telemetryv1alpha1.SinkTarget) field.ErrorList {
 	var errs field.ErrorList
 	if sink.PrometheusRemoteWrite == nil {
 		errs = append(errs, field.Required(path.Child("prometheusRemoteWrite"), ""))
@@ -178,7 +177,7 @@ func validateTelemetrySinkTarget(path *field.Path, sink v1alpha1.SinkTarget) fie
 	return errs
 }
 
-func validatePrometheusRemoteWrite(path *field.Path, otel v1alpha1.PrometheusRemoteWriteSink) field.ErrorList {
+func validatePrometheusRemoteWrite(path *field.Path, otel telemetryv1alpha1.PrometheusRemoteWriteSink) field.ErrorList {
 	var errs field.ErrorList
 	if otel.Endpoint == "" {
 		errs = append(errs, field.Required(path.Child("http"), "A valid endpoint URL is required"))
