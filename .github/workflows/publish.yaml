@@ -20,7 +20,7 @@ jobs:
     strategy:
       matrix:
         bundles:
-          - name: ghcr.io/datum-cloud/telemetry-services-operator/crds
+          - name: ghcr.io/datum-cloud/telemetry-services-operator/telemetry-services-crds
             path: config/crd
           - name: ghcr.io/datum-cloud/telemetry-services-operator/vector-telemetry-exporter
             path: config/vector
