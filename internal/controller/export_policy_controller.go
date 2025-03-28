@@ -109,7 +109,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 	configSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("export-policy-vector-config-%s", exportPolicy.GetUID()),
-			Namespace: exportPolicy.GetNamespace(),
+			Namespace: r.DownstreamVectorConfigNamespace,
 			Labels: map[string]string{
 				r.VectorConfigLabelKey: r.VectorConfigLabelValue,
 			},
