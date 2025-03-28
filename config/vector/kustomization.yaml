@@ -3,6 +3,19 @@ resources:
   - rbac.yaml
   - deployment.yaml
   - service.yaml
+  - monitoring.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/name: vector-telemetry-exporter
+      app.kubernetes.io/component: exporter
+      app.kubernetes.io/part-of: telemetry-services
+    includeSelectors: true
+    includeTemplates: true
+
+configurations:
+  - kustomizeconfig.yaml
+
 configMapGenerator:
   - name: base-vector-config
     files:

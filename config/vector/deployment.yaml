@@ -2,15 +2,17 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vector
+  labels:
+    app.kubernetes.io/name: vector
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: vector
+      app.kubernetes.io/name: vector
   template:
     metadata:
       labels:
-        app: vector
+        app.kubernetes.io/name: vector
     spec:
       serviceAccountName: vector
       automountServiceAccountToken: true
