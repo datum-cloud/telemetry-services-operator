@@ -17,29 +17,43 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
+	mckind "sigs.k8s.io/multicluster-runtime/providers/kind"
+	mcsingle "sigs.k8s.io/multicluster-runtime/providers/single"
 
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 	"go.datum.net/telemetry-services-operator/internal/controller"
-	webhooktelemetryv1alpha1 "go.datum.net/telemetry-services-operator/internal/webhook/v1alpha1"
+	"go.datum.net/telemetry-services-operator/internal/providers"
+	mcdatum "go.datum.net/telemetry-services-operator/internal/providers/datum"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -66,6 +80,9 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var clusterDiscoveryMode string
+	var vectorConfigurationNamespace string
+	var upstreamClusterKubeconfig string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -94,6 +111,11 @@ func main() {
 		"true",
 		"The value of the label that will be added to the vector config secret.",
 	)
+	flag.StringVar(&clusterDiscoveryMode, "cluster-discovery-mode", "single",
+		"Method to discover clusters. Allowed values are: "+strings.Join(providers.AllowedProviders, ","))
+	flag.StringVar(&vectorConfigurationNamespace, "vector-config-namespace", "default",
+		"The namespace in the downstream cluster to create the vector config secret in.")
+	flag.StringVar(&upstreamClusterKubeconfig, "upstream-cluster-kubeconfig", "", "The path to the kubeconfig file to use for connecting to the upstream cluster.")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -191,7 +213,83 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	upstreamClusterConfig, err := clientcmd.BuildConfigFromFlags("", upstreamClusterKubeconfig)
+	if err != nil {
+		setupLog.Error(err, "unable to load control plane kubeconfig")
+		os.Exit(1)
+	}
+
+	// Retrieve the configuration for the cluster that the operator is deployed
+	// in. This is the cluster that will have the vector config secret created
+	// for telemetry services.
+	downstreamClusterConfig := ctrl.GetConfigOrDie()
+
+	downstreamCluster, err := cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
+		o.Scheme = scheme
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to construct downstream luster")
+		os.Exit(1)
+	}
+
+	var localManager manager.Manager
+
+	var provider interface {
+		multicluster.Provider
+		// TODO(jreese) see if Run should be defined in the Provider interface
+		Run(context.Context, mcmanager.Manager) error
+	}
+	var singleCluster cluster.Cluster
+
+	switch clusterDiscoveryMode {
+	case providers.ProviderSingle:
+		singleCluster, err = cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
+			o.Scheme = scheme
+		})
+		if err != nil {
+			setupLog.Error(err, "failed creating cluster")
+			os.Exit(1)
+		}
+		provider = mcsingle.New("single", singleCluster)
+
+	case providers.ProviderDatum:
+		localManager, err = manager.New(downstreamClusterConfig, manager.Options{
+			Client: client.Options{
+				Cache: &client.CacheOptions{
+					Unstructured: true,
+				},
+			},
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to set up overall controller manager")
+			os.Exit(1)
+		}
+
+		provider, err = mcdatum.New(localManager, upstreamClusterConfig, mcdatum.Options{
+			ClusterOptions: []cluster.Option{
+				func(o *cluster.Options) {
+					o.Scheme = scheme
+				},
+			},
+		})
+		if err != nil {
+			setupLog.Error(err, "unable to create datum project provider")
+			os.Exit(1)
+		}
+
+	case providers.ProviderKind:
+		provider = mckind.New()
+
+	default:
+		setupLog.Error(fmt.Errorf(
+			"unsupported cluster discovery mode. Got %q, expected one of %s",
+			clusterDiscoveryMode,
+			strings.Join(providers.AllowedProviders, ","),
+		), "")
+		os.Exit(1)
+	}
+
+	mgr, err := mcmanager.New(upstreamClusterConfig, provider, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -216,8 +314,8 @@ func main() {
 	}
 
 	if err = (&controller.ExportPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		DownstreamClient:                downstreamCluster.GetClient(),
+		DownstreamVectorConfigNamespace: vectorConfigurationNamespace,
 		MetricsService: controller.MetricsService{
 			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
 			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
@@ -231,28 +329,15 @@ func main() {
 	}
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
-			os.Exit(1)
-		}
+		// TODO: Re-enable webhooks once the webhook server is properly configured
+		//       to support multicluster.
+		//
+		// if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+		// 	setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
+		// 	os.Exit(1)
+		// }
 	}
 	// +kubebuilder:scaffold:builder
-
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
-
-	if webhookCertWatcher != nil {
-		setupLog.Info("Adding webhook certificate watcher to manager")
-		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -263,9 +348,56 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+	ctx := ctrl.SetupSignalHandler()
+
+	if clusterDiscoveryMode == providers.ProviderSingle {
+		setupLog.Info("engaging cluster for single cluster provider")
+		// Pending feedback on https://github.com/multicluster-runtime/multicluster-runtime/pull/17#issue-2911191237
+		// to determine if the provider's Run function should be calling Engage
+		if err := mgr.Engage(ctx, "single", singleCluster); err != nil {
+			setupLog.Error(err, "failed engaging cluster")
+			os.Exit(1)
+		}
+	}
+
+	g, ctx := errgroup.WithContext(ctx)
+	if localManager != nil {
+		setupLog.Info("starting local manager")
+		g.Go(func() error {
+			return ignoreCanceled(localManager.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting cluster discovery provider")
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+
+	g.Go(func() error {
+		return ignoreCanceled(downstreamCluster.Start(ctx))
+	})
+
+	if singleCluster != nil {
+		setupLog.Info("starting cluster for single cluster provider")
+		g.Go(func() error {
+			return ignoreCanceled(singleCluster.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting multicluster manager")
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+
+	if err := g.Wait(); err != nil {
+		setupLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }

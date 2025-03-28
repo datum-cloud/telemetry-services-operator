@@ -10,7 +10,8 @@ import (
 	. "github.com/onsi/gomega"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	ctrl "sigs.k8s.io/controller-runtime"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -91,14 +92,13 @@ var _ = Describe("ExportPolicy Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 			controllerReconciler := &ExportPolicyReconciler{
-				Client:                 k8sClient,
-				Scheme:                 k8sClient.Scheme(),
 				VectorConfigLabelKey:   "telemetry.datumapis.com/vector-export-policy-config",
 				VectorConfigLabelValue: "true",
 			}
 
-			_, err := controllerReconciler.Reconcile(ctx, reconcile.Request{
-				NamespacedName: typeNamespacedName,
+			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{
+				ClusterName: "test-cluster",
+				Request:     ctrl.Request{NamespacedName: typeNamespacedName},
 			})
 			Expect(err).NotTo(HaveOccurred())
 			// TODO(user): Add more specific assertions depending on your controller's reconciliation logic.
