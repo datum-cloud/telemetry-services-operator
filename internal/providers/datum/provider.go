@@ -34,7 +34,7 @@ import (
 var _ multicluster.Provider = &Provider{}
 
 var projectGV = schema.GroupVersion{Group: "resourcemanager.datumapis.com", Version: "v1alpha"}
-var projectGVK = projectGV.WithKind("Project")
+var projectGVK = projectGV.WithKind("ProjectControlPlane")
 
 // Options are the options for the Datum cluster Provider.
 type Options struct {
@@ -43,12 +43,12 @@ type Options struct {
 }
 
 // New creates a new Datum cluster Provider.
-func New(localMgr manager.Manager, opts Options) (*Provider, error) {
+func New(localMgr manager.Manager, datumAPIConfig *rest.Config, opts Options) (*Provider, error) {
 	p := &Provider{
 		opts:      opts,
 		log:       log.Log.WithName("datum-cluster-provider"),
-		config:    localMgr.GetConfig(),
 		client:    localMgr.GetClient(),
+		config:    datumAPIConfig,
 		projects:  map[string]cluster.Cluster{},
 		cancelFns: map[string]context.CancelFunc{},
 	}
@@ -111,7 +111,7 @@ func (p *Provider) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result
 
 	key := req.NamespacedName.String()
 	var project unstructured.Unstructured
-	project.SetGroupVersionKind((schema.GroupVersion{Group: "resourcemanager.datumapis.com", Version: "v1alpha"}).WithKind("Project"))
+	project.SetGroupVersionKind(projectGVK)
 
 	if err := p.client.Get(ctx, req.NamespacedName, &project); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -151,7 +151,7 @@ func (p *Provider) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result
 		return ctrl.Result{}, err
 	}
 
-	if !apimeta.IsStatusConditionTrue(conditions, "Ready") {
+	if !apimeta.IsStatusConditionTrue(conditions, "ControlPlaneReady") {
 		log.Info("Project is not ready")
 		return ctrl.Result{}, nil
 	}

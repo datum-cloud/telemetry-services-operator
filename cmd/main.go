@@ -243,7 +243,7 @@ func main() {
 
 	switch clusterDiscoveryMode {
 	case providers.ProviderSingle:
-		singleCluster, err = cluster.New(upstreamClusterConfig, func(o *cluster.Options) {
+		singleCluster, err = cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
 			o.Scheme = scheme
 		})
 		if err != nil {
@@ -253,7 +253,7 @@ func main() {
 		provider = mcsingle.New("single", singleCluster)
 
 	case providers.ProviderDatum:
-		localManager, err = manager.New(upstreamClusterConfig, manager.Options{
+		localManager, err = manager.New(downstreamClusterConfig, manager.Options{
 			Client: client.Options{
 				Cache: &client.CacheOptions{
 					Unstructured: true,
@@ -265,7 +265,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		provider, err = mcdatum.New(localManager, mcdatum.Options{
+		provider, err = mcdatum.New(localManager, upstreamClusterConfig, mcdatum.Options{
 			ClusterOptions: []cluster.Option{
 				func(o *cluster.Options) {
 					o.Scheme = scheme
