@@ -109,7 +109,9 @@ func (p *Provider) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result
 	log := p.log.WithValues("project", req.Name)
 	log.Info("Reconciling Project")
 
-	key := req.NamespacedName.String()
+	// The project control plane resource is a cluster scoped resource so we only
+	// use the name of the project to identify the cluster.
+	key := req.Name
 	var project unstructured.Unstructured
 	project.SetGroupVersionKind(projectGVK)
 
