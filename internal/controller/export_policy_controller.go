@@ -98,7 +98,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 
 	// Create the vector configuration for the export policy. This will skip over
 	// any source or sink configurations that are not valid.
-	vectorConfig := r.createVectorConfiguration(ctx, cluster.GetClient(), exportPolicy)
+	vectorConfig := r.createVectorConfiguration(ctx, req.ClusterName, cluster.GetClient(), exportPolicy)
 
 	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
