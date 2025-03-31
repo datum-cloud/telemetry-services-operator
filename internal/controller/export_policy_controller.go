@@ -69,7 +69,8 @@ type MetricsService struct {
 // For more details, check Reconcile and its Result here: -
 // https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx, "project_name", req.ClusterName)
+	ctx = log.IntoContext(ctx, logger)
 
 	logger.Info("reconciling export policy")
 

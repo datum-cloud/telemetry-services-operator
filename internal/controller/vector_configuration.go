@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/VictoriaMetrics/metricsql"
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -38,6 +39,25 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 			continue
 		}
 
+		query, err := metricsql.Parse(source.Metrics.MetricsQL)
+		if err != nil {
+			log.FromContext(ctx, "source", source.Name).Error(err, "unable to parse metricsql query")
+			continue
+		}
+
+		metricExpr, ok := query.(*metricsql.MetricExpr)
+		if !ok {
+			log.FromContext(ctx, "source", source.Name).Error(fmt.Errorf("failed to convert metricsql query to MetricExpress"), "")
+		}
+
+		metricExpr.LabelFilterss = append(metricExpr.LabelFilterss, []metricsql.LabelFilter{{
+			Label: "resourcemanager_datumapis_com_project_name",
+			Value: projectName,
+		}})
+
+		marshalledQuery := []byte{}
+		marshalledQuery = metricExpr.AppendString(marshalledQuery)
+
 		sources[fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, source.Name)] = map[string]any{
 			"type":      "prometheus_scrape",
 			"endpoints": []string{r.MetricsService.Endpoint},
@@ -47,7 +67,7 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 				"password": r.MetricsService.Password,
 			},
 			"query": map[string]any{
-				"match[]": []string{source.Metrics.MetricsQL},
+				"match[]": []string{string(marshalledQuery)},
 			},
 		}
 	}
