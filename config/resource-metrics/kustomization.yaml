@@ -1,0 +1,8 @@
+namespace: datum-system
+configMapGenerator:
+  - name: telemetry-services-resource-metrics
+    files:
+    - export-policies.yaml
+    options:
+      labels:
+        telemetry.datumapis.com/resource-metrics-config: "true"
