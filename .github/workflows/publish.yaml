@@ -17,15 +17,8 @@ jobs:
       id-token: write
       contents: read
       packages: write
-    strategy:
-      matrix:
-        bundles:
-          - name: ghcr.io/datum-cloud/telemetry-services-operator/telemetry-services-crds
-            path: config/crd
-          - name: ghcr.io/datum-cloud/telemetry-services-operator/vector-telemetry-exporter
-            path: config/vector
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.1.0
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@publish-kustomize-directory
     with:
-      bundle-name: ${{ matrix.bundles.name }}
-      bundle-path: ${{ matrix.bundles.path }}
+      bundle-name: ghcr.io/datum-cloud/telemetry-services-operator-kustomize
+      bundle-path: config
     secrets: inherit
