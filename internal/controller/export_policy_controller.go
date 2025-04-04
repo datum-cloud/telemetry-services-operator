@@ -69,7 +69,8 @@ type MetricsService struct {
 // For more details, check Reconcile and its Result here: -
 // https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx, "project_name", req.ClusterName)
+	ctx = log.IntoContext(ctx, logger)
 
 	logger.Info("reconciling export policy")
 
@@ -98,7 +99,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 
 	// Create the vector configuration for the export policy. This will skip over
 	// any source or sink configurations that are not valid.
-	vectorConfig := r.createVectorConfiguration(ctx, cluster.GetClient(), exportPolicy)
+	vectorConfig := r.createVectorConfiguration(ctx, req.ClusterName, cluster.GetClient(), exportPolicy)
 
 	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
