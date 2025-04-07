@@ -63,6 +63,7 @@ spec:
         args:
           - --leader-elect
           - --health-probe-bind-address=:8081
+          - --server-config=/config/service-config.yaml
         image: controller:latest
         name: manager
         ports: []
@@ -92,7 +93,12 @@ spec:
           requests:
             cpu: 500m
             memory: 256Mi
-        volumeMounts: []
-      volumes: []
+        volumeMounts:
+          - name: service-config
+            mountPath: /config
+      volumes:
+        - name: service-config
+          configMap:
+            name: service-config
       serviceAccountName: controller-manager
       terminationGracePeriodSeconds: 10
