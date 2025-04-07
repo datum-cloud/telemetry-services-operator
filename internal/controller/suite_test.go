@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -14,9 +15,13 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcsingle "sigs.k8s.io/multicluster-runtime/providers/single"
 
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
@@ -31,6 +36,7 @@ var (
 	testEnv   *envtest.Environment
 	cfg       *rest.Config
 	k8sClient client.Client
+	mgr       mcmanager.Manager
 )
 
 func TestControllers(t *testing.T) {
@@ -69,6 +75,22 @@ var _ = BeforeSuite(func() {
 	k8sClient, err = client.New(cfg, client.Options{Scheme: scheme.Scheme})
 	Expect(err).NotTo(HaveOccurred())
 	Expect(k8sClient).NotTo(BeNil())
+
+	cluster, err := cluster.New(cfg)
+	Expect(err).NotTo(HaveOccurred())
+
+	mgr, err = mcmanager.New(cfg, mcsingle.New("test-cluster", cluster), manager.Options{})
+	Expect(err).NotTo(HaveOccurred())
+
+	go func() {
+		Expect(mgr.Start(ctx)).To(Succeed())
+	}()
+
+	go func() {
+		Expect(cluster.Start(ctx)).To(Succeed())
+	}()
+
+	time.Sleep(5 * time.Second)
 })
 
 var _ = AfterSuite(func() {

@@ -15,7 +15,6 @@ namePrefix: telemetry-services-operator-
 #    someName: someValue
 
 resources:
-- ../crd
 - ../rbac
 - ../manager
 - ../resource-metrics
