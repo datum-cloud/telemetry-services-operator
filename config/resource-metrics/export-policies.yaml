@@ -1,0 +1,43 @@
+# TODO: Consider moving this to an OCI bundle published by the operator's repo.
+kind: CustomResourceStateMetrics
+spec:
+  resources:
+    - groupVersionKind:
+        group: "telemetry.datumapis.com"
+        kind: "ExportPolicy"
+        version: "v1alpha1"
+      labelsFromPath:
+        name: [metadata, name]
+        namespace: [metadata, namespace]
+      metricNamePrefix: export_policy
+      metrics:
+        - name: "info"
+          each:
+            type: Info
+            info:
+              labelsFromPath:
+                "uid": [metadata, uid]
+        - name: "created"
+          each:
+            type: Gauge
+            gauge:
+              path: [metadata, creationTimestamp]
+        - name: "status_condition"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, conditions]
+              labelsFromPath:
+                type: ["type"]
+                reason: ["reason"]
+              valueFrom: ["status"]
+        - name: "sink_status_condition"
+          each:
+            type: Gauge
+            gauge:
+              path: [status, sinks]
+              labelsFromPath:
+                sink_name: ["name"]
+                type: ["conditions", "type"]
+                reason: ["conditions", "reason"]
+              valueFrom: ["conditions", "status"]
