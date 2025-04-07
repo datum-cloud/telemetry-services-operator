@@ -50,8 +50,8 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 			log.FromContext(ctx, "source", source.Name).Error(fmt.Errorf("failed to convert metricsql query to MetricExpress"), "")
 		}
 
-		for _, labelFilter := range metricExpr.LabelFilterss {
-			labelFilter = append(labelFilter, metricsql.LabelFilter{
+		for i := range metricExpr.LabelFilterss {
+			metricExpr.LabelFilterss[i] = append(metricExpr.LabelFilterss[i], metricsql.LabelFilter{
 				Label: "resourcemanager_datumapis_com_project_name",
 				Value: projectName,
 			})
