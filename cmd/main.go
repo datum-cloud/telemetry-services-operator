@@ -297,15 +297,15 @@ func main() {
 		os.Exit(1)
 	}
 	// nolint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		// TODO: Re-enable webhooks once the webhook server is properly configured
-		//       to support multicluster.
-		//
-		// if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
-		// 	setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
-		// 	os.Exit(1)
-		// }
-	}
+	// if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+	// 	TODO: Re-enable webhooks once the webhook server is properly configured
+	// 	      to support multicluster.
+
+	// 	if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+	// 		setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
+	// 		os.Exit(1)
+	// 	}
+	// }
 	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
