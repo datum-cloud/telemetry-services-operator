@@ -1,0 +1,12 @@
+apiVersion: apiserver.config.datumapis.com/v1alpha1
+kind: TelemetryServiceOperator
+discovery:
+  mode: single
+  internalServiceDiscovery: true
+  # Use in-cluster config by default
+  discoveryKubeconfigPath: ""
+  # Use in-cluster config by default
+  projectKubeconfigPath: ""
+downstreamResourceManagement:
+  # Use in-cluster config by default
+  kubeconfigPath: ""

@@ -144,12 +144,14 @@ endif
 .PHONY: install
 install: manifests kustomize ## Install CRDs into the K8s cluster specified in ~/.kube/config.
 	$(KUSTOMIZE) build config/dev | $(KUBECTL) apply -f -
-	$(KUBECTL) wait --for=condition=Ready -n kube-system certificate/telemetry-services-operator-serving-cert
-	mkdir -p $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs
-	$(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
-		| jq -r '.data["tls.crt"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.crt
-	$(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
-		| jq -r '.data["tls.key"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.key
+	# TODO: Enable this once we have a webhook that's functional
+	#
+	# $(KUBECTL) wait --for=condition=Ready -n kube-system certificate/telemetry-services-operator-serving-cert
+	# mkdir -p $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs
+	# $(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
+	# 	| jq -r '.data["tls.crt"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.crt
+	# $(KUBECTL) get secret -n kube-system telemetry-services-webhook-server-cert -o json \
+	# 	| jq -r '.data["tls.key"] | @base64d' > $(LOCALBIN)/tmp/k8s-webhook-server/serving-certs/tls.key
 
 .PHONY: uninstall
 uninstall: manifests kustomize ## Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.

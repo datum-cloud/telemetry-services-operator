@@ -1,6 +1,8 @@
 resources:
 - issuer.yaml
-- certificate-webhook.yaml
+# TODO: Enable this once we have a webhook that's functional
+#
+# - certificate-webhook.yaml
 - certificate-metrics.yaml
 
 configurations:

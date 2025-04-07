@@ -11,19 +11,28 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
 )
 
 // ExportPolicyReconciler reconciles a ExportPolicy object
 type ExportPolicyReconciler struct {
-	client.Client
-	Scheme *runtime.Scheme
+	mgr mcmanager.Manager
+
+	// The client for the downstream cluster that vector configurations will be
+	// created in.
+	DownstreamClient client.Client
+
+	// The namespace in the downstream cluster that vector configurations will be
+	// created in.
+	DownstreamVectorConfigNamespace string
 
 	// The metrics service that can be used to query metrics from the telemetry
 	// system.
@@ -59,31 +68,37 @@ type MetricsService struct {
 //
 // For more details, check Reconcile and its Result here: -
 // https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
-func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	logger.Info("reconciling export policy")
+
+	cluster, err := r.mgr.GetCluster(ctx, req.ClusterName)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to get cluster: %w", err)
+	}
 
 	// Retrieve the export policy from the cluster and confirm if it exists.
 	exportPolicy := &v1alpha1.ExportPolicy{}
-	if err := r.Client.Get(ctx, req.NamespacedName, exportPolicy); err != nil {
+	if err := cluster.GetClient().Get(ctx, req.NamespacedName, exportPolicy); err != nil {
 		if errors.IsNotFound(err) {
 			return ctrl.Result{}, nil
 		}
 		return ctrl.Result{}, err
 	}
-	logger.Info("reconciling export policy")
 
 	// Validate that the export policy configuration is valid and update the
 	// status of the export policy to reflect the status of the sinks.
-	if r.reconcileExportPolicyStatus(ctx, exportPolicy) {
+	if reconcileExportPolicyStatus(ctx, cluster.GetClient(), exportPolicy) {
 		logger.Info("export policy status changed, updating status")
-		if err := r.Client.Status().Update(ctx, exportPolicy); err != nil {
+		if err := cluster.GetClient().Status().Update(ctx, exportPolicy); err != nil {
 			return ctrl.Result{}, fmt.Errorf("failed to update export policy status: %w", err)
 		}
 	}
 
 	// Create the vector configuration for the export policy. This will skip over
 	// any source or sink configurations that are not valid.
-	vectorConfig := r.createVectorConfiguration(ctx, exportPolicy)
+	vectorConfig := r.createVectorConfiguration(ctx, cluster.GetClient(), exportPolicy)
 
 	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
@@ -94,7 +109,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	configSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("export-policy-vector-config-%s", exportPolicy.GetUID()),
-			Namespace: exportPolicy.GetNamespace(),
+			Namespace: r.DownstreamVectorConfigNamespace,
 			Labels: map[string]string{
 				r.VectorConfigLabelKey: r.VectorConfigLabelValue,
 			},
@@ -104,12 +119,14 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, configSecret, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.DownstreamClient, configSecret, func() error {
 		// Set the owner reference for the vector config secret so it is deleted
 		// when the export policy is deleted.
-		if err := controllerutil.SetControllerReference(exportPolicy, configSecret, r.Scheme); err != nil {
-			return fmt.Errorf("failed to set controller reference: %w", err)
-		}
+		//
+		// TODO: Determine how we want to handle deletion in upstream clusters
+		// if err := controllerutil.SetControllerReference(exportPolicy, configSecret, cluster.GetScheme()); err != nil {
+		// 	return fmt.Errorf("failed to set controller reference: %w", err)
+		// }
 
 		configSecret.Data = map[string][]byte{
 			fmt.Sprintf("%s.json", exportPolicy.UID): vectorConfigJSON,
@@ -123,7 +140,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 // reconcileExportPolicyStatus validates the export policy configuration and
 // updates the status of the export policy to reflect the status of the sinks.
-func (r *ExportPolicyReconciler) reconcileExportPolicyStatus(ctx context.Context, exportPolicy *v1alpha1.ExportPolicy) bool {
+func reconcileExportPolicyStatus(ctx context.Context, client client.Client, exportPolicy *v1alpha1.ExportPolicy) bool {
 	statusChanged := false
 	sinkStatuses := []v1alpha1.SinkStatus{}
 	// Validate each of the sinks in the export policy have a valid configuration
@@ -139,7 +156,7 @@ func (r *ExportPolicyReconciler) reconcileExportPolicyStatus(ctx context.Context
 			// Validate that any authentication for the sink is valid
 			if sink.Target.PrometheusRemoteWrite.Authentication != nil {
 				if sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth != nil {
-					_, err := retrieveBasicAuthSecret(ctx, r.Client, sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef, exportPolicy)
+					_, err := retrieveBasicAuthSecret(ctx, client, sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef, exportPolicy)
 					if err != nil {
 						accepted = false
 						updated := apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
@@ -231,9 +248,11 @@ func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatu
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *ExportPolicyReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&v1alpha1.ExportPolicy{}).
+func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
+	r.mgr = mgr
+
+	return mcbuilder.ControllerManagedBy(mgr).
+		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
 		Named("exportpolicy").
 		Complete(r)
 }
