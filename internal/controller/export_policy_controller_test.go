@@ -89,11 +89,16 @@ var _ = Describe("ExportPolicy Controller", func() {
 			By("Cleanup the specific resource instance ExportPolicy")
 			Expect(k8sClient.Delete(ctx, resource)).To(Succeed())
 		})
+
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
+
 			controllerReconciler := &ExportPolicyReconciler{
-				VectorConfigLabelKey:   "telemetry.datumapis.com/vector-export-policy-config",
-				VectorConfigLabelValue: "true",
+				VectorConfigLabelKey:            "telemetry.datumapis.com/vector-export-policy-config",
+				VectorConfigLabelValue:          "true",
+				mgr:                             mgr,
+				DownstreamClient:                k8sClient,
+				DownstreamVectorConfigNamespace: "default",
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{
