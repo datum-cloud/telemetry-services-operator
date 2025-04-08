@@ -65,6 +65,8 @@ spec:
               value: /etc/vector/
             - name: RESOURCE
               value: both
+            - name: UNIQUE_FILENAMES
+              value: "true"
       volumes:
         - name: base-config
           configMap:
