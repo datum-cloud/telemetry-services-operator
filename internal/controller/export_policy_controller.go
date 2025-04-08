@@ -12,15 +12,25 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mchandler "sigs.k8s.io/multicluster-runtime/pkg/handler"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
+)
+
+const (
+	exportPolicyLabelDomain = "exportpolicy.telemetry.datumapis.com"
+
+	exportPolicyNameLabel      = exportPolicyLabelDomain + "/name"
+	exportPolicyNamespaceLabel = exportPolicyLabelDomain + "/namespace"
 )
 
 // ExportPolicyReconciler reconciles a ExportPolicy object
@@ -113,7 +123,9 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 			Name:      fmt.Sprintf("export-policy-vector-config-%s", exportPolicy.GetUID()),
 			Namespace: r.DownstreamVectorConfigNamespace,
 			Labels: map[string]string{
-				r.VectorConfigLabelKey: r.VectorConfigLabelValue,
+				r.VectorConfigLabelKey:     r.VectorConfigLabelValue,
+				exportPolicyNameLabel:      exportPolicy.Name,
+				exportPolicyNamespaceLabel: exportPolicy.Namespace,
 			},
 		},
 		Data: map[string][]byte{
@@ -255,6 +267,22 @@ func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 
 	return mcbuilder.ControllerManagedBy(mgr).
 		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
+		Watches(&corev1.Secret{}, mchandler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []mcreconcile.Request {
+			labels := obj.GetLabels()
+
+			// TODO: Check to see if the secret is actually referenced by the export
+			// policy before enqueuing the request.
+			return []mcreconcile.Request{
+				{
+					Request: reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      labels[exportPolicyNameLabel],
+							Namespace: labels[exportPolicyNamespaceLabel],
+						},
+					},
+				},
+			}
+		})).
 		Named("exportpolicy").
 		Complete(r)
 }
