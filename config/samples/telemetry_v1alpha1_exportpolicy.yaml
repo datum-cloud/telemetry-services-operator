@@ -20,7 +20,7 @@ spec:
         # familiar with using metricsql queries to select metric data from
         # Victoria Metrics.
         metricsql: |
-          {job="telemetry-system/envoy-proxies"}
+          {service_name="telemetry.datumapis.com"}
   sinks:
     - name: grafana-cloud-metrics
       sources:
