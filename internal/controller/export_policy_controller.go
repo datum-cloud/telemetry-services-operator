@@ -6,20 +6,31 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 	mcbuilder "sigs.k8s.io/multicluster-runtime/pkg/builder"
+	mchandler "sigs.k8s.io/multicluster-runtime/pkg/handler"
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
+)
+
+const (
+	exportPolicyLabelDomain = "exportpolicy.telemetry.datumapis.com"
+
+	exportPolicyNameLabel      = exportPolicyLabelDomain + "/name"
+	exportPolicyNamespaceLabel = exportPolicyLabelDomain + "/namespace"
 )
 
 // ExportPolicyReconciler reconciles a ExportPolicy object
@@ -69,7 +80,8 @@ type MetricsService struct {
 // For more details, check Reconcile and its Result here: -
 // https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.2/pkg/reconcile
 func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
+	logger := log.FromContext(ctx, "project_name", req.ClusterName)
+	ctx = log.IntoContext(ctx, logger)
 
 	logger.Info("reconciling export policy")
 
@@ -98,7 +110,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 
 	// Create the vector configuration for the export policy. This will skip over
 	// any source or sink configurations that are not valid.
-	vectorConfig := r.createVectorConfiguration(ctx, cluster.GetClient(), exportPolicy)
+	vectorConfig := r.createVectorConfiguration(ctx, strings.ReplaceAll(req.ClusterName, "/", ""), cluster.GetClient(), exportPolicy)
 
 	// Create or update the vector config secret.
 	vectorConfigJSON, err := json.MarshalIndent(vectorConfig, "", "  ")
@@ -111,7 +123,9 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 			Name:      fmt.Sprintf("export-policy-vector-config-%s", exportPolicy.GetUID()),
 			Namespace: r.DownstreamVectorConfigNamespace,
 			Labels: map[string]string{
-				r.VectorConfigLabelKey: r.VectorConfigLabelValue,
+				r.VectorConfigLabelKey:     r.VectorConfigLabelValue,
+				exportPolicyNameLabel:      exportPolicy.Name,
+				exportPolicyNamespaceLabel: exportPolicy.Namespace,
 			},
 		},
 		Data: map[string][]byte{
@@ -253,6 +267,22 @@ func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 
 	return mcbuilder.ControllerManagedBy(mgr).
 		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
+		Watches(&corev1.Secret{}, mchandler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []mcreconcile.Request {
+			labels := obj.GetLabels()
+
+			// TODO: Check to see if the secret is actually referenced by the export
+			// policy before enqueuing the request.
+			return []mcreconcile.Request{
+				{
+					Request: reconcile.Request{
+						NamespacedName: types.NamespacedName{
+							Name:      labels[exportPolicyNameLabel],
+							Namespace: labels[exportPolicyNamespaceLabel],
+						},
+					},
+				},
+			}
+		})).
 		Named("exportpolicy").
 		Complete(r)
 }
