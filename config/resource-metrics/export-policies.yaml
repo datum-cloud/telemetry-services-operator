@@ -1,4 +1,3 @@
-# TODO: Consider moving this to an OCI bundle published by the operator's repo.
 kind: CustomResourceStateMetrics
 spec:
   resources:
