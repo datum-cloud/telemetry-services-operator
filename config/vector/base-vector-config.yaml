@@ -36,8 +36,9 @@ transforms:
 
       log(parts, level: "debug", rate_limit_secs: 0)
 
-      # First part is always the cluster name
-      .tags.cluster_name = parts[1]
+      # First part is always the name of the project the export policy belongs
+      # to.
+      .tags.resourcemanager_datumapis_com_project_name = parts[1]
       # Second part is always the export policy UID
       .tags.export_policy_uid = parts[3]
       # Third part is always the source or sink name
