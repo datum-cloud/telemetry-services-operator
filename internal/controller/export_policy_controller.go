@@ -363,24 +363,68 @@ func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 	return mcbuilder.ControllerManagedBy(mgr).
 		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
 		Watches(&corev1.Secret{}, mchandler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []mcreconcile.Request {
-			labels := obj.GetLabels()
-			if labels[exportPolicyNameLabel] == "" || labels[exportPolicyNamespaceLabel] == "" {
+			logger := log.FromContext(ctx)
+
+			secret, ok := obj.(*corev1.Secret)
+			if !ok {
+				logger.Error(fmt.Errorf("object %T is not a Secret", obj), "unexpected type")
 				return nil
 			}
 
-			// TODO: Check to see if the secret is actually referenced by the export
-			// policy before enqueuing the request.
-			return []mcreconcile.Request{
-				{
-					Request: reconcile.Request{
-						NamespacedName: types.NamespacedName{
-							Name:      labels[exportPolicyNameLabel],
-							Namespace: labels[exportPolicyNamespaceLabel],
-						},
-					},
-				},
+			// Get the client for the cluster where the secret was changed
+			cluster, err := r.mgr.ClusterFromContext(ctx)
+			if err != nil {
+				logger.Error(err, "failed to get cluster")
+				return nil
 			}
+
+			upstreamClient := cluster.GetClient()
+
+			// List all ExportPolicies in the same namespace as the secret.
+			// Note: LocalSecretReference implies the secret is in the same namespace.
+			policyList := &v1alpha1.ExportPolicyList{}
+			if err := upstreamClient.List(ctx, policyList, client.InNamespace(secret.GetNamespace())); err != nil {
+				logger.Error(err, "failed to list ExportPolicies", "namespace", secret.GetNamespace())
+				return nil
+			}
+
+			var requests []mcreconcile.Request
+			for _, policy := range policyList.Items {
+				if referencesSecret(&policy, secret) {
+					if requests == nil { // Initialize slice only if needed
+						requests = make([]mcreconcile.Request, 0, 1) // Start with capacity 1
+					}
+					requests = append(requests, mcreconcile.Request{
+						Request: reconcile.Request{
+							NamespacedName: types.NamespacedName{
+								Name:      policy.Name,
+								Namespace: policy.Namespace,
+							},
+						},
+					})
+					// Log the enqueueing for clarity
+					logger.V(1).Info("enqueuing ExportPolicy due to secret change", "exportpolicy", client.ObjectKeyFromObject(&policy), "secret", client.ObjectKeyFromObject(secret))
+				}
+			}
+
+			return requests
 		})).
 		Named("exportpolicy").
 		Complete(r)
+}
+
+// referencesSecret checks if the given ExportPolicy references the provided Secret.
+func referencesSecret(policy *v1alpha1.ExportPolicy, secret *corev1.Secret) bool {
+	for _, sink := range policy.Spec.Sinks {
+		if sink.Target != nil &&
+			sink.Target.PrometheusRemoteWrite != nil &&
+			sink.Target.PrometheusRemoteWrite.Authentication != nil &&
+			sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth != nil &&
+			sink.Target.PrometheusRemoteWrite.Authentication.BasicAuth.SecretRef.Name == secret.Name {
+			// Found a reference in the same namespace
+			return true
+		}
+		// Add checks for other potential secret references here if needed in the future
+	}
+	return false
 }
