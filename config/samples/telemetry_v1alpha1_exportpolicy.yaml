@@ -10,7 +10,7 @@ spec:
   # define multiple telemetry sources. Telemetry data will **not** be de-duped
   # if its selected from multiple sources.
   sources:
-    - name: "gateway-metrics"  # Descriptive name for the source
+    - name: "telemetry-metrics"  # Descriptive name for the source
       # Source metrics from the Datum Cloud platform
       metrics:
         # The options in this section are expected to be mutually exclusive. Users
@@ -20,11 +20,11 @@ spec:
         # familiar with using metricsql queries to select metric data from
         # Victoria Metrics.
         metricsql: |
-          {job="telemetry-system/envoy-proxies"}
+          {service_name="telemetry.datumapis.com"}
   sinks:
     - name: grafana-cloud-metrics
       sources:
-        - gateway-metrics
+        - telemetry-metrics
       target:
         prometheusRemoteWrite:
           endpoint: "https://prometheus-prod-56-prod-us-east-2.grafana.net/api/prom/push"

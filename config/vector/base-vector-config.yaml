@@ -5,6 +5,49 @@ sources:
     type: internal_logs
   internal_metrics:
     type: internal_metrics
+
+transforms:
+  component_labeler:
+    type: remap
+    inputs:
+      - internal_metrics
+    source: |
+      # Only process metrics that are sources or sinks
+      if .tags.component_kind != "source" && .tags.component_kind != "sink" {
+        abort "Skipping non-source or non-sink component"
+      }
+
+      # Split component_id into parts
+      parts = split!(.tags.component_id, ":")
+
+      # Only process if we have at least 2 parts
+      if length(parts) != 5 {
+        abort "Skipping component with invalid component_id"
+      } else if parts[0] != "export-policy" {
+        abort "Skipping component that's not an export policy"
+      }
+
+      # Now we know that this component is a source or a sink for an export
+      # policy.
+      .tags.service_name = "telemetry.datumapis.com"
+      .tags.resource_kind = "ExportPolicy"
+      .tags.resource_uid = parts[3]
+      .tags.resource_name = parts[2]
+
+      log(parts, level: "debug", rate_limit_secs: 0)
+
+      # First part is always the name of the project the export policy belongs
+      # to.
+      .tags.resourcemanager_datumapis_com_project_name = parts[1]
+      # Second part is always the export policy UID
+      .tags.export_policy_uid = parts[3]
+      # Third part is always the source or sink name
+      if .tags.component_kind == "source" {
+        .tags.source_name = parts[4]
+      } else if .tags.component_kind == "sink" {
+        .tags.sink_name = parts[4]
+      }
+
 sinks:
   console:
     type: console
@@ -12,8 +55,9 @@ sinks:
       - internal_logs
     encoding:
       codec: json
+
   prometheus_export:
     type: prometheus_exporter
     inputs:
-      - internal_metrics
+      - component_labeler
     address: 0.0.0.0:9598
