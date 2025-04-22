@@ -34,7 +34,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
-	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
@@ -252,7 +251,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	runnables, provider, err := initializeClusterDiscovery(serverConfig, downstreamClusterConfig, scheme)
+	runnables, provider, err := initializeClusterDiscovery(serverConfig, downstreamCluster, scheme)
 	if err != nil {
 		setupLog.Error(err, "unable to initialize cluster discovery")
 		os.Exit(1)
@@ -331,10 +330,6 @@ func main() {
 		return ignoreCanceled(provider.Run(ctx, mgr))
 	})
 
-	g.Go(func() error {
-		return ignoreCanceled(downstreamCluster.Start(ctx))
-	})
-
 	setupLog.Info("starting multicluster manager")
 	g.Go(func() error {
 		return ignoreCanceled(mgr.Start(ctx))
@@ -368,22 +363,16 @@ func (p *wrappedSingleClusterProvider) Run(ctx context.Context, mgr mcmanager.Ma
 
 func initializeClusterDiscovery(
 	serverConfig config.TelemetryServicesOperator,
-	cfg *rest.Config,
+	deploymentCluster cluster.Cluster,
 	scheme *runtime.Scheme,
 ) (runnables []manager.Runnable, provider runnableProvider, err error) {
+	runnables = append(runnables, deploymentCluster)
 	switch serverConfig.Discovery.Mode {
 	case providers.ProviderSingle:
-		singleCluster, err := cluster.New(cfg, func(o *cluster.Options) {
-			o.Scheme = scheme
-		})
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed creating cluster: %w", err)
-		}
 		provider = &wrappedSingleClusterProvider{
-			Provider: mcsingle.New("single", singleCluster),
-			cluster:  singleCluster,
+			Provider: mcsingle.New("single", deploymentCluster),
+			cluster:  deploymentCluster,
 		}
-		runnables = []manager.Runnable{singleCluster}
 
 	case providers.ProviderDatum:
 		discoveryRestConfig, err := serverConfig.Discovery.DiscoveryRestConfig()
@@ -420,7 +409,7 @@ func initializeClusterDiscovery(
 			return nil, nil, fmt.Errorf("unable to create datum project provider: %w", err)
 		}
 
-		runnables = []manager.Runnable{discoveryManager}
+		runnables = append(runnables, discoveryManager)
 
 	// case providers.ProviderKind:
 	// 	provider = mckind.New(mckind.Options{
