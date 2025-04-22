@@ -17,35 +17,50 @@ limitations under the License.
 package main
 
 import (
+	"context"
 	"crypto/tls"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
-	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	"golang.org/x/sync/errgroup"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/certwatcher"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/cluster"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
+	"sigs.k8s.io/multicluster-runtime/pkg/multicluster"
+	mcsingle "sigs.k8s.io/multicluster-runtime/providers/single"
 
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	"go.datum.net/telemetry-services-operator/internal/config"
 	"go.datum.net/telemetry-services-operator/internal/controller"
-	webhooktelemetryv1alpha1 "go.datum.net/telemetry-services-operator/internal/webhook/v1alpha1"
+	"go.datum.net/telemetry-services-operator/internal/providers"
+	mcdatum "go.datum.net/telemetry-services-operator/internal/providers/datum"
 	// +kubebuilder:scaffold:imports
 )
 
 var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
+	codecs   = serializer.NewCodecFactory(scheme, serializer.EnableStrict)
 )
 
 func init() {
@@ -66,6 +81,9 @@ func main() {
 	var secureMetrics bool
 	var enableHTTP2 bool
 	var tlsOpts []func(*tls.Config)
+	var vectorConfigurationNamespace string
+	var upstreamClusterKubeconfig string
+	var serverConfigFile string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metrics endpoint binds to. "+
 		"Use :8443 for HTTPS or :8080 for HTTP, or leave as 0 to disable the metrics service.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -94,13 +112,36 @@ func main() {
 		"true",
 		"The value of the label that will be added to the vector config secret.",
 	)
+	flag.StringVar(&vectorConfigurationNamespace, "vector-config-namespace", "default",
+		"The namespace in the downstream cluster to create the vector config secret in.")
 	opts := zap.Options{
 		Development: true,
 	}
+	flag.StringVar(&serverConfigFile, "server-config", "", "path to the server config file")
+
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if len(serverConfigFile) == 0 {
+		setupLog.Error(fmt.Errorf("must provide --server-config"), "")
+		os.Exit(1)
+	}
+
+	var serverConfig config.TelemetryServicesOperator
+	data, err := os.ReadFile(serverConfigFile)
+	if err != nil {
+		setupLog.Error(fmt.Errorf("unable to read server config from %q", serverConfigFile), "")
+		os.Exit(1)
+	}
+
+	if err := runtime.DecodeInto(codecs.UniversalDecoder(), data, &serverConfig); err != nil {
+		setupLog.Error(err, "unable to decode server config")
+		os.Exit(1)
+	}
+
+	setupLog.Info("server config", "config", serverConfig)
 
 	// if the enable-http2 flag is false (the default), http/2 should be disabled
 	// due to its vulnerabilities. More specifically, disabling http/2 will
@@ -191,7 +232,32 @@ func main() {
 		})
 	}
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	upstreamClusterConfig, err := clientcmd.BuildConfigFromFlags("", upstreamClusterKubeconfig)
+	if err != nil {
+		setupLog.Error(err, "unable to load control plane kubeconfig")
+		os.Exit(1)
+	}
+
+	// Retrieve the configuration for the cluster that the operator is deployed
+	// in. This is the cluster that will have the vector config secret created
+	// for telemetry services.
+	downstreamClusterConfig := ctrl.GetConfigOrDie()
+
+	downstreamCluster, err := cluster.New(downstreamClusterConfig, func(o *cluster.Options) {
+		o.Scheme = scheme
+	})
+	if err != nil {
+		setupLog.Error(err, "failed to construct downstream luster")
+		os.Exit(1)
+	}
+
+	runnables, provider, err := initializeClusterDiscovery(serverConfig, downstreamCluster, scheme)
+	if err != nil {
+		setupLog.Error(err, "unable to initialize cluster discovery")
+		os.Exit(1)
+	}
+
+	mgr, err := mcmanager.New(upstreamClusterConfig, provider, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsServerOptions,
 		WebhookServer:          webhookServer,
@@ -216,8 +282,8 @@ func main() {
 	}
 
 	if err = (&controller.ExportPolicyReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		DownstreamClient:                downstreamCluster.GetClient(),
+		DownstreamVectorConfigNamespace: vectorConfigurationNamespace,
 		MetricsService: controller.MetricsService{
 			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
 			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
@@ -230,29 +296,16 @@ func main() {
 		os.Exit(1)
 	}
 	// nolint:goconst
-	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
-			setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
-			os.Exit(1)
-		}
-	}
+	// if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+	// 	TODO: Re-enable webhooks once the webhook server is properly configured
+	// 	      to support multicluster.
+
+	// 	if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+	// 		setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
+	// 		os.Exit(1)
+	// 	}
+	// }
 	// +kubebuilder:scaffold:builder
-
-	if metricsCertWatcher != nil {
-		setupLog.Info("Adding metrics certificate watcher to manager")
-		if err := mgr.Add(metricsCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add metrics certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
-
-	if webhookCertWatcher != nil {
-		setupLog.Info("Adding webhook certificate watcher to manager")
-		if err := mgr.Add(webhookCertWatcher); err != nil {
-			setupLog.Error(err, "unable to add webhook certificate watcher to manager")
-			os.Exit(1)
-		}
-	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -263,9 +316,123 @@ func main() {
 		os.Exit(1)
 	}
 
-	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
-		setupLog.Error(err, "problem running manager")
+	ctx := ctrl.SetupSignalHandler()
+	g, ctx := errgroup.WithContext(ctx)
+
+	for _, runnable := range runnables {
+		g.Go(func() error {
+			return ignoreCanceled(runnable.Start(ctx))
+		})
+	}
+
+	setupLog.Info("starting cluster discovery provider")
+	g.Go(func() error {
+		return ignoreCanceled(provider.Run(ctx, mgr))
+	})
+
+	setupLog.Info("starting multicluster manager")
+	g.Go(func() error {
+		return ignoreCanceled(mgr.Start(ctx))
+	})
+
+	if err := g.Wait(); err != nil {
+		setupLog.Error(err, "unable to start")
 		os.Exit(1)
 	}
+}
+
+type runnableProvider interface {
+	multicluster.Provider
+	Run(context.Context, mcmanager.Manager) error
+}
+
+// Needed until we contribute the patch in the following PR again (need to sign CLA):
+//
+//	See: https://github.com/kubernetes-sigs/multicluster-runtime/pull/18
+type wrappedSingleClusterProvider struct {
+	multicluster.Provider
+	cluster cluster.Cluster
+}
+
+func (p *wrappedSingleClusterProvider) Run(ctx context.Context, mgr mcmanager.Manager) error {
+	if err := mgr.Engage(ctx, "single", p.cluster); err != nil {
+		return err
+	}
+	return p.Provider.(runnableProvider).Run(ctx, mgr)
+}
+
+func initializeClusterDiscovery(
+	serverConfig config.TelemetryServicesOperator,
+	deploymentCluster cluster.Cluster,
+	scheme *runtime.Scheme,
+) (runnables []manager.Runnable, provider runnableProvider, err error) {
+	runnables = append(runnables, deploymentCluster)
+	switch serverConfig.Discovery.Mode {
+	case providers.ProviderSingle:
+		provider = &wrappedSingleClusterProvider{
+			Provider: mcsingle.New("single", deploymentCluster),
+			cluster:  deploymentCluster,
+		}
+
+	case providers.ProviderDatum:
+		discoveryRestConfig, err := serverConfig.Discovery.DiscoveryRestConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get discovery rest config: %w", err)
+		}
+
+		projectRestConfig, err := serverConfig.Discovery.ProjectRestConfig()
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to get project rest config: %w", err)
+		}
+
+		discoveryManager, err := manager.New(discoveryRestConfig, manager.Options{
+			Client: client.Options{
+				Cache: &client.CacheOptions{
+					Unstructured: true,
+				},
+			},
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to set up overall controller manager: %w", err)
+		}
+
+		provider, err = mcdatum.New(discoveryManager, mcdatum.Options{
+			ClusterOptions: []cluster.Option{
+				func(o *cluster.Options) {
+					o.Scheme = scheme
+				},
+			},
+			InternalServiceDiscovery: serverConfig.Discovery.InternalServiceDiscovery,
+			ProjectRestConfig:        projectRestConfig,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("unable to create datum project provider: %w", err)
+		}
+
+		runnables = append(runnables, discoveryManager)
+
+	// case providers.ProviderKind:
+	// 	provider = mckind.New(mckind.Options{
+	// 		ClusterOptions: []cluster.Option{
+	// 			func(o *cluster.Options) {
+	// 				o.Scheme = scheme
+	// 			},
+	// 		},
+	// 	})
+
+	default:
+		return nil, nil, fmt.Errorf(
+			"unsupported cluster discovery mode %s",
+			serverConfig.Discovery.Mode,
+		)
+	}
+
+	return runnables, provider, nil
+}
+
+func ignoreCanceled(err error) error {
+	if errors.Is(err, context.Canceled) {
+		return nil
+	}
+	return err
 }
