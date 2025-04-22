@@ -8,7 +8,7 @@ require (
 	github.com/VictoriaMetrics/metricsql v0.84.3
 	github.com/go-logr/logr v1.4.2
 	github.com/onsi/ginkgo/v2 v2.23.3
-	github.com/onsi/gomega v1.36.3
+	github.com/onsi/gomega v1.37.0
 	github.com/stretchr/testify v1.9.0
 	golang.org/x/sync v0.12.0
 	k8s.io/api v0.32.3
