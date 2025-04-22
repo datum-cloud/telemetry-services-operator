@@ -11,6 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/finalizer"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -93,12 +94,20 @@ var _ = Describe("ExportPolicy Controller", func() {
 		It("should successfully reconcile the resource", func() {
 			By("Reconciling the created resource")
 
+			finalizers := finalizer.NewFinalizers()
+			secretFinalizer := &vectorSecretFinalizer{
+				downstreamClient:                k8sClient,
+				downstreamVectorConfigNamespace: "default",
+			}
+			Expect(finalizers.Register(exportPolicyControllerFinalizer, secretFinalizer)).To(Succeed())
+
 			controllerReconciler := &ExportPolicyReconciler{
 				VectorConfigLabelKey:            "telemetry.datumapis.com/vector-export-policy-config",
 				VectorConfigLabelValue:          "true",
 				mgr:                             mgr,
 				DownstreamClient:                k8sClient,
 				DownstreamVectorConfigNamespace: "default",
+				finalizers:                      finalizers,
 			}
 
 			_, err := controllerReconciler.Reconcile(ctx, mcreconcile.Request{
