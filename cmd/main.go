@@ -36,6 +36,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
+
+	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	"go.datum.net/telemetry-services-operator/internal/controller"
+	webhooktelemetryv1alpha1 "go.datum.net/telemetry-services-operator/internal/webhook/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -47,6 +51,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 
+	utilruntime.Must(telemetryv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
 
@@ -55,6 +60,7 @@ func main() {
 	var metricsAddr string
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var webhookCertPath, webhookCertName, webhookCertKey string
+	var vectorConfigLabelKey, vectorConfigLabelValue string
 	var enableLeaderElection bool
 	var probeAddr string
 	var secureMetrics bool
@@ -77,6 +83,17 @@ func main() {
 	flag.StringVar(&metricsCertKey, "metrics-cert-key", "tls.key", "The name of the metrics server key file.")
 	flag.BoolVar(&enableHTTP2, "enable-http2", false,
 		"If set, HTTP/2 will be enabled for the metrics and webhook servers")
+	flag.StringVar(
+		&vectorConfigLabelKey,
+		"vector-config-label-key",
+		"telemetry.datumapis.com/vector-export-policy-config",
+		"The key of the label that will be added to the vector config secret.",
+	)
+	flag.StringVar(&vectorConfigLabelValue,
+		"vector-config-label-value",
+		"true",
+		"The value of the label that will be added to the vector config secret.",
+	)
 	opts := zap.Options{
 		Development: true,
 	}
@@ -180,7 +197,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "1a42e9cd.telemetry.datumapis.com",
+		LeaderElectionID:       "telemetry.datumapis.com",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -198,6 +215,27 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err = (&controller.ExportPolicyReconciler{
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		MetricsService: controller.MetricsService{
+			Endpoint: os.Getenv("TELEMETRY_SERVICE_METRICS_ENDPOINT"),
+			Username: os.Getenv("TELEMETRY_SERVICE_METRICS_USERNAME"),
+			Password: os.Getenv("TELEMETRY_SERVICE_METRICS_PASSWORD"),
+		},
+		VectorConfigLabelKey:   vectorConfigLabelKey,
+		VectorConfigLabelValue: vectorConfigLabelValue,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "unable to create controller", "controller", "ExportPolicy")
+		os.Exit(1)
+	}
+	// nolint:goconst
+	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
+		if err = webhooktelemetryv1alpha1.SetupExportPolicyWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "ExportPolicy")
+			os.Exit(1)
+		}
+	}
 	// +kubebuilder:scaffold:builder
 
 	if metricsCertWatcher != nil {

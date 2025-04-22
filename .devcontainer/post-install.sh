@@ -21,3 +21,10 @@ kubebuilder version
 docker --version
 go version
 kubectl version --client
+
+# Install Vector so we can use it to send telemetry data
+bash -c "$(curl -L https://setup.vector.dev)"
+apt-get install vector -y
+
+# Install helm
+curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash

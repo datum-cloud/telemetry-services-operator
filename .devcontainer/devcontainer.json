@@ -3,7 +3,13 @@
   "image": "docker.io/golang:1.24",
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
-    "ghcr.io/devcontainers/features/git:1": {}
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/common-utils": {
+      "installOhMyZsh": true,
+      "configureZshAsDefaultShell": true,
+      "installOhMyZshConfig": true,
+      "installZsh": true
+    }
   },
 
   "runArgs": ["--network=host"],
@@ -15,11 +21,13 @@
       },
       "extensions": [
         "ms-kubernetes-tools.vscode-kubernetes-tools",
-        "ms-azuretools.vscode-docker"
+        "ms-azuretools.vscode-docker",
+        "golang.go",
+        "patbenatar.advanced-new-file",
+        "lucperkins.vrl-vscode"
       ]
     }
   },
 
   "onCreateCommand": "bash .devcontainer/post-install.sh"
 }
-
