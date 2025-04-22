@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/VictoriaMetrics/metricsql"
 	"go.datum.net/telemetry-services-operator/api/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -23,7 +24,7 @@ import (
 // policy configuration is validated before this function is called and that the
 // status of the export policy will be updated to highlight any issues with the
 // export policy configuration.
-func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, client client.Client, exportPolicy *v1alpha1.ExportPolicy) map[string]any {
+func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, projectName string, client client.Client, exportPolicy *v1alpha1.ExportPolicy) map[string]any {
 	// Create a vector configuration for each source and sink combination
 	vectorConfig := map[string]any{
 		"sources": make(map[string]any),
@@ -38,7 +39,41 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 			continue
 		}
 
-		sources[fmt.Sprintf("%s:%s", exportPolicy.UID, source.Name)] = map[string]any{
+		query, err := metricsql.Parse(source.Metrics.MetricsQL)
+		if err != nil {
+			log.FromContext(ctx, "source", source.Name).Error(err, "unable to parse metricsql query")
+			continue
+		}
+
+		metricExpr, ok := query.(*metricsql.MetricExpr)
+		if !ok {
+			log.FromContext(ctx, "source", source.Name).Error(fmt.Errorf("failed to convert metricsql query to MetricExpress"), "")
+		}
+
+		// Default to the project name as the label filter so that all metrics for
+		// the project are exported.
+		if len(metricExpr.LabelFilterss) == 0 {
+			metricExpr.LabelFilterss = [][]metricsql.LabelFilter{
+				{
+					{
+						Label: "resourcemanager_datumapis_com_project_name",
+						Value: projectName,
+					},
+				},
+			}
+		} else {
+			for i := range metricExpr.LabelFilterss {
+				metricExpr.LabelFilterss[i] = append(metricExpr.LabelFilterss[i], metricsql.LabelFilter{
+					Label: "resourcemanager_datumapis_com_project_name",
+					Value: projectName,
+				})
+			}
+		}
+
+		marshalledQuery := []byte{}
+		marshalledQuery = metricExpr.AppendString(marshalledQuery)
+
+		sources[fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, source.Name)] = map[string]any{
 			"type":      "prometheus_scrape",
 			"endpoints": []string{r.MetricsService.Endpoint},
 			"auth": map[string]any{
@@ -47,7 +82,7 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 				"password": r.MetricsService.Password,
 			},
 			"query": map[string]any{
-				"match[]": []string{source.Metrics.MetricsQL},
+				"match[]": []string{string(marshalledQuery)},
 			},
 		}
 	}
@@ -56,27 +91,27 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 	sinks := vectorConfig["sinks"].(map[string]any)
 
 	for _, sink := range exportPolicy.Spec.Sinks {
-		sinkConfig, err := getSinkVectorConfig(ctx, client, sink, exportPolicy)
+		sinkConfig, err := getSinkVectorConfig(ctx, client, projectName, sink, exportPolicy)
 		if err != nil {
 			log.FromContext(ctx).Error(err, "failed to get vector configuration for sink", "sink", sink.Name)
 			continue
 		}
 
-		sinks[fmt.Sprintf("%s:%s", exportPolicy.UID, sink.Name)] = sinkConfig
+		sinks[fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, sink.Name)] = sinkConfig
 	}
 
 	return vectorConfig
 }
 
 // getSinkVectorConfig creates a vector configuration for the given sink.
-func getSinkVectorConfig(ctx context.Context, client client.Client, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]any, error) {
+func getSinkVectorConfig(ctx context.Context, client client.Client, projectName string, sink v1alpha1.TelemetrySink, exportPolicy *v1alpha1.ExportPolicy) (map[string]any, error) {
 	config := map[string]any{}
 
 	// Get all of the sources that are configured for the sink and add them
 	// to the inputs for the prometheus remote write sink.
 	inputs := []string{}
 	for _, source := range sink.Sources {
-		inputs = append(inputs, fmt.Sprintf("%s:%s", exportPolicy.UID, source))
+		inputs = append(inputs, fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, source))
 	}
 	config["inputs"] = inputs
 
