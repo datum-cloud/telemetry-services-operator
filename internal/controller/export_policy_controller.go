@@ -269,6 +269,9 @@ func (r *ExportPolicyReconciler) SetupWithManager(mgr mcmanager.Manager) error {
 		For(&v1alpha1.ExportPolicy{}, mcbuilder.WithEngageWithLocalCluster(false), mcbuilder.WithEngageWithProviderClusters(true)).
 		Watches(&corev1.Secret{}, mchandler.TypedEnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []mcreconcile.Request {
 			labels := obj.GetLabels()
+			if labels[exportPolicyNameLabel] == "" || labels[exportPolicyNamespaceLabel] == "" {
+				return nil
+			}
 
 			// TODO: Check to see if the secret is actually referenced by the export
 			// policy before enqueuing the request.
