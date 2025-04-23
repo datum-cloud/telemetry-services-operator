@@ -170,7 +170,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 	}
 
 	// Don't process the export policy if it is marked for deletion.
-	if !exportPolicy.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !exportPolicy.DeletionTimestamp.IsZero() {
 		logger.Info("export policy is marked for deletion, stopping reconciliation")
 		return ctrl.Result{}, nil
 	}
