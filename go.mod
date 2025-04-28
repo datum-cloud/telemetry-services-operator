@@ -11,9 +11,9 @@ require (
 	github.com/onsi/gomega v1.37.0
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/sync v0.13.0
-	k8s.io/api v0.32.3
-	k8s.io/apimachinery v0.32.3
-	k8s.io/client-go v0.32.3
+	k8s.io/api v0.32.4
+	k8s.io/apimachinery v0.32.4
+	k8s.io/client-go v0.32.4
 	sigs.k8s.io/controller-runtime v0.20.4
 	sigs.k8s.io/multicluster-runtime v0.20.4-alpha.6
 )
