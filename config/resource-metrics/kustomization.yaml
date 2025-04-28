@@ -3,7 +3,6 @@ configMapGenerator:
   - name: telemetry-services-resource-metrics
     files:
     - export-policies.yaml
-    - general.yaml
     options:
       labels:
         telemetry.datumapis.com/resource-metrics-config: "true"
