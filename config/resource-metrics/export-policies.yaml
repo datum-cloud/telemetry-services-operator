@@ -8,7 +8,7 @@ spec:
       labelsFromPath:
         name: [metadata, name]
         namespace: [metadata, namespace]
-      metricNamePrefix: export_policy
+      metricNamePrefix: datum_cloud_telemetry_export_policy
       metrics:
         - name: "info"
           each:
