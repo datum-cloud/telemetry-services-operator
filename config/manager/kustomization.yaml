@@ -2,9 +2,9 @@ resources:
 - manager.yaml
 kind: Kustomization
 images:
-- name: controller
-  newName: example.com/telemetry-services-operator
-  newTag: v0.0.1
+- name: ghcr.io/datum-cloud/telemetry-services-operator
+  newName: ghcr.io/datum-cloud/telemetry-services-operator
+  newTag: latest
 
   # Create a config map with the configuration to use for the operator.
       # TODO: Determine why the deployment isn't getting updated to add in the hash
