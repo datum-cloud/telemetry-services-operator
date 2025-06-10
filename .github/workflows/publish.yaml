@@ -10,6 +10,11 @@ on:
 
 jobs:
   publish-container-image:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
     uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@publish-to-github
     with:
       image-name: telemetry-services-operator
