@@ -1,0 +1,21 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: ProtectedResource
+metadata:
+  name: telemetry.datumapis.com-exportpolicy
+spec:
+  serviceRef:
+    name: "telemetry.datumapis.com"
+  kind: ExportPolicy
+  plural: exportpolicies
+  singular: exportpolicy
+  permissions:
+    - list
+    - get
+    - create
+    - update
+    - delete
+    - patch
+    - watch
+  parentResources:
+    - apiGroup: resourcemanager.datumapis.com
+      kind: Project
