@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: exportpolicies.telemetry.datumapis.com
+  name: exportpolicies.telemetry.miloapis.com
 spec:
-  group: telemetry.datumapis.com
+  group: telemetry.miloapis.com
   names:
     kind: ExportPolicy
     listKind: ExportPolicyList
@@ -193,7 +193,7 @@ spec:
 
                             Here's an example of a metricsql query that will publish gateway metrics:
 
-                            ``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
+                            ``` {service_name=“networking.miloapis.com”, resource_kind="Gateway"} ```
 
                             See: https://docs.victoriametrics.com/metricsql/
                           type: string

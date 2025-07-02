@@ -252,7 +252,7 @@ api-docs: crdoc kustomize
 	$(KUSTOMIZE) build $$TMP_MANIFEST_DIR -o $$TMP_DIR ;\
 	mkdir -p docs/api ;\
 	for crdmanifest in $$TMP_DIR/*; do \
-	  filename="$$(basename -s .telemetry.datumapis.com.yaml $$crdmanifest)" ;\
+	  filename="$$(basename -s .telemetry.miloapis.com.yaml $$crdmanifest)" ;\
 	  filename="$${filename#apiextensions.k8s.io_v1_customresourcedefinition_}" ;\
 	  $(CRDOC) --resources $$crdmanifest --output docs/api/$$filename.md ;\
 	done;\

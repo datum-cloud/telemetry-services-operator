@@ -102,7 +102,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 			Expect(finalizers.Register(exportPolicyControllerFinalizer, secretFinalizer)).To(Succeed())
 
 			controllerReconciler := &ExportPolicyReconciler{
-				VectorConfigLabelKey:            "telemetry.datumapis.com/vector-export-policy-config",
+				VectorConfigLabelKey:            "telemetry.miloapis.com/vector-export-policy-config",
 				VectorConfigLabelValue:          "true",
 				mgr:                             mgr,
 				DownstreamClient:                k8sClient,

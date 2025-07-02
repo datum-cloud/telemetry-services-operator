@@ -29,7 +29,7 @@ transforms:
 
       # Now we know that this component is a source or a sink for an export
       # policy.
-      .tags.service_name = "telemetry.datumapis.com"
+      .tags.service_name = "telemetry.miloapis.com"
       .tags.resource_kind = "ExportPolicy"
       .tags.resource_uid = parts[3]
       .tags.resource_name = parts[2]
