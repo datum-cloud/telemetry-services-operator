@@ -12,4 +12,5 @@ spec:
   includedPermissions:
     - telemetry.datumapis.com/exportpolicies.create
     - telemetry.datumapis.com/exportpolicies.update
+    - telemetry.datumapis.com/exportpolicies.patch
     - telemetry.datumapis.com/exportpolicies.delete
