@@ -17,11 +17,23 @@ transforms:
         abort "Skipping non-source or non-sink component"
       }
 
-      # Split component_id into parts
+      # The component ID will match the pattern:
+      # `export-policy:<project-name>:<namespace>:<name>:<uid>:<component-name>`
+      #
+      # Index variables for each part
+      project_name_index = 1
+      namespace_index = 2
+      name_index = 3
+      uid_index = 4
+      component_name_index = 5
+
+      # Split the component ID into it's parts
       parts = split!(.tags.component_id, ":")
 
-      # Only process if we have at least 2 parts
-      if length(parts) != 5 {
+
+
+      # Only process if we have the correct number of parts.
+      if length(parts) != 6 {
         abort "Skipping component with invalid component_id"
       } else if parts[0] != "export-policy" {
         abort "Skipping component that's not an export policy"
@@ -31,21 +43,20 @@ transforms:
       # policy.
       .tags.service_name = "telemetry.miloapis.com"
       .tags.resource_kind = "ExportPolicy"
-      .tags.resource_uid = parts[3]
-      .tags.resource_name = parts[2]
+      .tags.resource_uid = parts[uid_index]
+      .tags.resource_namespace = parts[namespace_index]
+      .tags.resource_name = parts[name_index]
 
       log(parts, level: "debug", rate_limit_secs: 0)
 
       # First part is always the name of the project the export policy belongs
       # to.
-      .tags.resourcemanager_datumapis_com_project_name = parts[1]
-      # Second part is always the export policy UID
-      .tags.export_policy_uid = parts[3]
-      # Third part is always the source or sink name
+      .tags.resourcemanager_datumapis_com_project_name = parts[project_name_index]
+
       if .tags.component_kind == "source" {
-        .tags.source_name = parts[4]
+        .tags.source_name = parts[component_name_index]
       } else if .tags.component_kind == "sink" {
-        .tags.sink_name = parts[4]
+        .tags.sink_name = parts[component_name_index]
       }
 
 sinks:
