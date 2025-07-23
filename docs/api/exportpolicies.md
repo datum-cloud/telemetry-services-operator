@@ -2,9 +2,9 @@
 
 Packages:
 
-- [telemetry.datumapis.com/v1alpha1](#telemetrydatumapiscomv1alpha1)
+- [telemetry.miloapis.com/v1alpha1](#telemetrydatumapiscomv1alpha1)
 
-# telemetry.datumapis.com/v1alpha1
+# telemetry.miloapis.com/v1alpha1
 
 Resource Types:
 
@@ -35,7 +35,7 @@ ExportPolicy is the Schema for the export policy API.
     <tbody><tr>
       <td><b>apiVersion</b></td>
       <td>string</td>
-      <td>telemetry.datumapis.com/v1alpha1</td>
+      <td>telemetry.miloapis.com/v1alpha1</td>
       <td>true</td>
       </tr>
       <tr>
@@ -471,7 +471,7 @@ export policy.
 
 Here's an example of a metricsql query that will publish gateway metrics:
 
-``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
+``` {service_name=“networking.miloapis.com”, resource_kind="Gateway"} ```
 
 See: https://docs.victoriametrics.com/metricsql/<br/>
         </td>

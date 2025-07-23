@@ -58,7 +58,7 @@ spec:
             - name: NAMESPACE
               value: ALL
             - name: LABEL
-              value: "telemetry.datumapis.com/vector-export-policy-config"
+              value: "telemetry.miloapis.com/vector-export-policy-config"
             - name: LABEL_VALUE
               value: "true"
             - name: FOLDER

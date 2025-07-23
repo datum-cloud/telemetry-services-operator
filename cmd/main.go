@@ -104,7 +104,7 @@ func main() {
 	flag.StringVar(
 		&vectorConfigLabelKey,
 		"vector-config-label-key",
-		"telemetry.datumapis.com/vector-export-policy-config",
+		"telemetry.miloapis.com/vector-export-policy-config",
 		"The key of the label that will be added to the vector config secret.",
 	)
 	flag.StringVar(&vectorConfigLabelValue,
@@ -263,7 +263,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "telemetry.datumapis.com",
+		LeaderElectionID:       "telemetry.miloapis.com",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly

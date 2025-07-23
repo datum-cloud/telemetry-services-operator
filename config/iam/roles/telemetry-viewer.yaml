@@ -1,13 +1,13 @@
 apiVersion: iam.miloapis.com/v1alpha1
 kind: Role
 metadata:
-  name: telemetry.datumapis.com-viewer
+  name: telemetry.miloapis.com-viewer
   annotations:
     kubernetes.io/display-name: Telemetry Viewer
     kubernetes.io/description: "View access to all telemetry resources"
 spec:
   launchStage: Beta
   includedPermissions:
-    - telemetry.datumapis.com/exportpolicies.list
-    - telemetry.datumapis.com/exportpolicies.get
-    - telemetry.datumapis.com/exportpolicies.watch
+    - telemetry.miloapis.com/exportpolicies.list
+    - telemetry.miloapis.com/exportpolicies.get
+    - telemetry.miloapis.com/exportpolicies.watch

@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	exportPolicyLabelDomain = "exportpolicy.telemetry.datumapis.com"
+	exportPolicyLabelDomain = "exportpolicy.telemetry.miloapis.com"
 
 	exportPolicyNameLabel      = exportPolicyLabelDomain + "/name"
 	exportPolicyNamespaceLabel = exportPolicyLabelDomain + "/namespace"
@@ -120,8 +120,8 @@ func (f *vectorSecretFinalizer) Finalize(ctx context.Context, obj client.Object)
 	return finalizer.Result{}, nil
 }
 
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=telemetry.datumapis.com,resources=exportpolicies/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=telemetry.miloapis.com,resources=exportpolicies,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=telemetry.miloapis.com,resources=exportpolicies/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;create;update;delete
 
 // Reconcile an Export Policy and ensure the necessary resources exist to export
