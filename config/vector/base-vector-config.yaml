@@ -21,7 +21,7 @@ transforms:
       # `export-policy:<project-name>:<namespace>:<name>:<uid>:<source/sink name>`
       parts = split!(.tags.component_id, ":")
 
-      # Only process if we have at least 2 parts
+      # Only process if we have the correct number of parts.
       if length(parts) != 6 {
         abort "Skipping component with invalid component_id"
       } else if parts[0] != "export-policy" {
@@ -33,7 +33,6 @@ transforms:
       .tags.service_name = "telemetry.miloapis.com"
       .tags.resource_kind = "ExportPolicy"
       .tags.resource_uid = parts[4]
-      .tags.export_policy_uid = parts[4]
       .tags.resource_namespace = parts[2]
       .tags.resource_name = parts[3]
 
