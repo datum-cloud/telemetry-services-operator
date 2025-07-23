@@ -73,7 +73,7 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 		marshalledQuery := []byte{}
 		marshalledQuery = metricExpr.AppendString(marshalledQuery)
 
-		sources[fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, source.Name)] = map[string]any{
+		sources[getVectorComponentID(exportPolicy, projectName, source.Name)] = map[string]any{
 			"type":      "prometheus_scrape",
 			"endpoints": []string{r.MetricsService.Endpoint},
 			"auth": map[string]any{
@@ -97,10 +97,17 @@ func (r *ExportPolicyReconciler) createVectorConfiguration(ctx context.Context, 
 			continue
 		}
 
-		sinks[fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, sink.Name)] = sinkConfig
+		sinks[getVectorComponentID(exportPolicy, projectName, sink.Name)] = sinkConfig
 	}
 
 	return vectorConfig
+}
+
+// getVectorComponentID will return the fully qualified ID of a source for an export
+// policy. The ID will encode metadata from the export policy into the ID so
+// it's available in the internal telemetry of the vector instance.
+func getVectorComponentID(exportPolicy *v1alpha1.ExportPolicy, projectName, componentName string) string {
+	return fmt.Sprintf("export-policy:%s:%s:%s:%s:%s", projectName, exportPolicy.Namespace, exportPolicy.Name, exportPolicy.UID, componentName)
 }
 
 // getSinkVectorConfig creates a vector configuration for the given sink.
@@ -111,7 +118,7 @@ func getSinkVectorConfig(ctx context.Context, client client.Client, projectName 
 	// to the inputs for the prometheus remote write sink.
 	inputs := []string{}
 	for _, source := range sink.Sources {
-		inputs = append(inputs, fmt.Sprintf("export-policy:%s:%s:%s:%s", projectName, exportPolicy.Name, exportPolicy.UID, source))
+		inputs = append(inputs, getVectorComponentID(exportPolicy, projectName, source))
 	}
 	config["inputs"] = inputs
 
