@@ -102,7 +102,7 @@ type MetricSource struct {
 	//
 	// Here's an example of a metricsql query that will publish gateway metrics:
 	//
-	// ``` {service_name=“networking.datumapis.com”, resource_kind="Gateway"} ```
+	// ``` {service_name=“networking.miloapis.com”, resource_kind="Gateway"} ```
 	//
 	// See: https://docs.victoriametrics.com/metricsql/
 	MetricsQL string `json:"metricsql,omitempty"`

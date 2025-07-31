@@ -6,7 +6,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 
-	"go.datum.net/telemetry-services-operator/internal/providers"
+	mulicluster "go.miloapis.com/milo/pkg/multicluster-runtime"
 )
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -42,7 +42,7 @@ type DiscoveryConfig struct {
 	// Mode is the mode that the operator should use to discover clusters.
 	//
 	// Defaults to "single"
-	Mode providers.Provider `json:"mode"`
+	Mode mulicluster.Provider `json:"mode"`
 
 	// InternalServiceDiscovery will result in the operator to connect to internal
 	// service addresses for projects.
@@ -61,7 +61,7 @@ type DiscoveryConfig struct {
 
 func SetDefaults_DiscoveryConfig(obj *DiscoveryConfig) {
 	if obj.Mode == "" {
-		obj.Mode = providers.ProviderSingle
+		obj.Mode = mulicluster.ProviderSingle
 	}
 }
 

@@ -2,7 +2,7 @@ kind: CustomResourceStateMetrics
 spec:
   resources:
     - groupVersionKind:
-        group: "telemetry.datumapis.com"
+        group: "telemetry.miloapis.com"
         kind: "ExportPolicy"
         version: "v1alpha1"
       labelsFromPath:

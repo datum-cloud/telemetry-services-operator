@@ -14,7 +14,7 @@ rules:
   - get
   - update
 - apiGroups:
-  - telemetry.datumapis.com
+  - telemetry.miloapis.com
   resources:
   - exportpolicies
   verbs:
@@ -26,7 +26,7 @@ rules:
   - update
   - watch
 - apiGroups:
-  - telemetry.datumapis.com
+  - telemetry.miloapis.com
   resources:
   - exportpolicies/status
   verbs:

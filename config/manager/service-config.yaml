@@ -1,4 +1,4 @@
-apiVersion: apiserver.config.datumapis.com/v1alpha1
+apiVersion: apiserver.config.miloapis.com/v1alpha1
 kind: TelemetryServiceOperator
 discovery:
   mode: single

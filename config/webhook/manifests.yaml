@@ -15,7 +15,7 @@ webhooks:
   name: vexportpolicy-v1alpha1.kb.io
   rules:
   - apiGroups:
-    - telemetry.datumapis.com
+    - telemetry.miloapis.com
     apiVersions:
     - v1alpha1
     operations:

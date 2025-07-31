@@ -1,4 +1,4 @@
-apiVersion: telemetry.datumapis.com/v1alpha1
+apiVersion: telemetry.miloapis.com/v1alpha1
 kind: ExportPolicy
 metadata:
   labels:
@@ -20,7 +20,7 @@ spec:
         # familiar with using metricsql queries to select metric data from
         # Victoria Metrics.
         metricsql: |
-          {service_name="telemetry.datumapis.com"}
+          {service_name="telemetry.miloapis.com"}
   sinks:
     - name: grafana-cloud-metrics
       sources:

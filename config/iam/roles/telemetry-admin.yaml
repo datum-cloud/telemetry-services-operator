@@ -1,0 +1,16 @@
+apiVersion: iam.miloapis.com/v1alpha1
+kind: Role
+metadata:
+  name: telemetry.miloapis.com-admin
+  annotations:
+    kubernetes.io/display-name: Telemetry Admin
+    kubernetes.io/description: "Full access to all telemetry resources"
+spec:
+  launchStage: Beta
+  inheritedRoles:
+    - name: telemetry.miloapis.com-viewer
+  includedPermissions:
+    - telemetry.miloapis.com/exportpolicies.create
+    - telemetry.miloapis.com/exportpolicies.update
+    - telemetry.miloapis.com/exportpolicies.patch
+    - telemetry.miloapis.com/exportpolicies.delete

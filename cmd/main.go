@@ -52,8 +52,8 @@ import (
 	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
 	"go.datum.net/telemetry-services-operator/internal/config"
 	"go.datum.net/telemetry-services-operator/internal/controller"
-	"go.datum.net/telemetry-services-operator/internal/providers"
-	mcdatum "go.datum.net/telemetry-services-operator/internal/providers/datum"
+	milomulticluster "go.miloapis.com/milo/pkg/multicluster-runtime"
+	miloprovider "go.miloapis.com/milo/pkg/multicluster-runtime/milo"
 	// +kubebuilder:scaffold:imports
 )
 
@@ -104,7 +104,7 @@ func main() {
 	flag.StringVar(
 		&vectorConfigLabelKey,
 		"vector-config-label-key",
-		"telemetry.datumapis.com/vector-export-policy-config",
+		"telemetry.miloapis.com/vector-export-policy-config",
 		"The key of the label that will be added to the vector config secret.",
 	)
 	flag.StringVar(&vectorConfigLabelValue,
@@ -263,7 +263,7 @@ func main() {
 		WebhookServer:          webhookServer,
 		HealthProbeBindAddress: probeAddr,
 		LeaderElection:         enableLeaderElection,
-		LeaderElectionID:       "telemetry.datumapis.com",
+		LeaderElectionID:       "telemetry.miloapis.com",
 		// LeaderElectionReleaseOnCancel defines if the leader should step down voluntarily
 		// when the Manager ends. This requires the binary to immediately end when the
 		// Manager is stopped, otherwise, this setting is unsafe. Setting this significantly
@@ -368,13 +368,13 @@ func initializeClusterDiscovery(
 ) (runnables []manager.Runnable, provider runnableProvider, err error) {
 	runnables = append(runnables, deploymentCluster)
 	switch serverConfig.Discovery.Mode {
-	case providers.ProviderSingle:
+	case milomulticluster.ProviderSingle:
 		provider = &wrappedSingleClusterProvider{
 			Provider: mcsingle.New("single", deploymentCluster),
 			cluster:  deploymentCluster,
 		}
 
-	case providers.ProviderDatum:
+	case milomulticluster.ProviderMilo:
 		discoveryRestConfig, err := serverConfig.Discovery.DiscoveryRestConfig()
 		if err != nil {
 			return nil, nil, fmt.Errorf("unable to get discovery rest config: %w", err)
@@ -396,7 +396,7 @@ func initializeClusterDiscovery(
 			return nil, nil, fmt.Errorf("unable to set up overall controller manager: %w", err)
 		}
 
-		provider, err = mcdatum.New(discoveryManager, mcdatum.Options{
+		provider, err = miloprovider.New(discoveryManager, miloprovider.Options{
 			ClusterOptions: []cluster.Option{
 				func(o *cluster.Options) {
 					o.Scheme = scheme
