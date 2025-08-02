@@ -10,7 +10,7 @@ require (
 	github.com/VictoriaMetrics/metricsql v0.84.3
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
-	go.miloapis.com/milo v0.1.0
+	go.miloapis.com/milo v0.1.1
 	golang.org/x/sync v0.15.0
 	k8s.io/api v0.33.1
 	k8s.io/apimachinery v0.33.2
