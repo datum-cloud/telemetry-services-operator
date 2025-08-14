@@ -12,9 +12,9 @@ require (
 	github.com/onsi/gomega v1.37.0
 	go.miloapis.com/milo v0.1.0
 	golang.org/x/sync v0.15.0
-	k8s.io/api v0.33.1
-	k8s.io/apimachinery v0.33.2
-	k8s.io/client-go v0.33.1
+	k8s.io/api v0.33.4
+	k8s.io/apimachinery v0.33.4
+	k8s.io/client-go v0.33.4
 	sigs.k8s.io/controller-runtime v0.21.0
 	sigs.k8s.io/multicluster-runtime v0.21.0-alpha.8
 )
