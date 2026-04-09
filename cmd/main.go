@@ -130,7 +130,12 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	setupLog.Info("starting telemetry-services-operator", "version", version, "gitCommit", gitCommit, "gitTreeState", gitTreeState, "buildDate", buildDate)
+	setupLog.Info("starting telemetry-services-operator",
+		"version", version,
+		"gitCommit", gitCommit,
+		"gitTreeState", gitTreeState,
+		"buildDate", buildDate,
+	)
 
 	if len(serverConfigFile) == 0 {
 		setupLog.Error(fmt.Errorf("must provide --server-config"), "")
