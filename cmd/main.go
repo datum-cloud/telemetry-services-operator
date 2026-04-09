@@ -61,6 +61,12 @@ var (
 	scheme   = runtime.NewScheme()
 	setupLog = ctrl.Log.WithName("setup")
 	codecs   = serializer.NewCodecFactory(scheme, serializer.EnableStrict)
+
+	// Build information. Populated at build-time via -ldflags.
+	version      = "dev"
+	gitCommit    = "unknown"
+	gitTreeState = "unknown"
+	buildDate    = "unknown"
 )
 
 func init() {
@@ -123,6 +129,8 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	setupLog.Info("starting telemetry-services-operator", "version", version, "gitCommit", gitCommit, "gitTreeState", gitTreeState, "buildDate", buildDate)
 
 	if len(serverConfigFile) == 0 {
 		setupLog.Error(fmt.Errorf("must provide --server-config"), "")
