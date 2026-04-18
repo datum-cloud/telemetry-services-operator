@@ -66,6 +66,7 @@ type SinkStatus struct {
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
+// +kubebuilder:metadata:annotations="discovery.miloapis.com/parent-contexts=Project"
 
 // ExportPolicy is the Schema for the export policy API.
 type ExportPolicy struct {
