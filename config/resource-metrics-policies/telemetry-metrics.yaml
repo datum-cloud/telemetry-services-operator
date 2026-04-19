@@ -1,0 +1,100 @@
+apiVersion: resourcemetrics.miloapis.com/v1alpha1
+kind: ResourceMetricsPolicy
+metadata:
+  name: telemetry-metrics
+spec:
+  generators:
+    - name: export-policy-info
+      resource:
+        group: telemetry.miloapis.com
+        version: v1alpha1
+        resource: exportpolicies
+      families:
+        - name: datum_cloud_telemetry_export_policy_info
+          help: "Exposes metadata about each ExportPolicy resource."
+          type: gauge
+          metrics:
+            - labels:
+                - name: name
+                  value: "object.metadata.name"
+                - name: namespace
+                  value: "object.metadata.namespace"
+                - name: uid
+                  value: "object.metadata.uid"
+
+    - name: export-policy-created
+      resource:
+        group: telemetry.miloapis.com
+        version: v1alpha1
+        resource: exportpolicies
+      families:
+        - name: datum_cloud_telemetry_export_policy_created
+          help: "Unix creation timestamp of each ExportPolicy resource."
+          type: gauge
+          metrics:
+            - value: "double(timestamp(object.metadata.creationTimestamp).getSeconds())"
+              labels:
+                - name: name
+                  value: "object.metadata.name"
+                - name: namespace
+                  value: "object.metadata.namespace"
+
+    - name: export-policy-status-condition
+      resource:
+        group: telemetry.miloapis.com
+        version: v1alpha1
+        resource: exportpolicies
+      families:
+        - name: datum_cloud_telemetry_export_policy_status_condition
+          help: "Status condition for each ExportPolicy resource."
+          type: gauge
+          metrics:
+            - value: |
+                object.status.conditions.exists(c, c.type == 'Ready') ?
+                  (object.status.conditions.filter(c, c.type == 'Ready')[0].status == 'True' ? 1.0 : 0.0) :
+                  0.0
+              labels:
+                - name: name
+                  value: "object.metadata.name"
+                - name: namespace
+                  value: "object.metadata.namespace"
+                - name: condition
+                  value: "'Ready'"
+                - name: reason
+                  value: |
+                    object.status.conditions.exists(c, c.type == 'Ready') ?
+                      object.status.conditions.filter(c, c.type == 'Ready')[0].reason : ''
+                - name: status
+                  value: |
+                    object.status.conditions.exists(c, c.type == 'Ready') ?
+                      object.status.conditions.filter(c, c.type == 'Ready')[0].status : ''
+
+    # NOTE: The original CustomResourceStateMetrics config for sink_status_condition
+    # iterated over each sink in status.sinks[] and each sink's conditions[].
+    # The ResourceMetricsPolicy CRD generates one metric per object, not per
+    # nested array element, so true per-sink per-condition cardinality cannot be
+    # reproduced without a future "for-each" feature. The metric below reports
+    # whether ALL sinks have a Ready condition with status True. If per-sink
+    # granularity is required this family will need manual review once the
+    # ResourceMetricsPolicy API supports iteration over nested arrays.
+    - name: export-policy-sink-status-condition
+      resource:
+        group: telemetry.miloapis.com
+        version: v1alpha1
+        resource: exportpolicies
+      families:
+        - name: datum_cloud_telemetry_export_policy_sink_status_condition
+          help: "Indicates whether all sinks in an ExportPolicy have a Ready condition. Per-sink granularity requires manual review (see comment above)."
+          type: gauge
+          metrics:
+            - value: |
+                object.status.sinks.all(s,
+                  s.conditions.exists(c, c.type == 'Ready' && c.status == 'True')
+                ) ? 1.0 : 0.0
+              labels:
+                - name: name
+                  value: "object.metadata.name"
+                - name: namespace
+                  value: "object.metadata.namespace"
+                - name: condition
+                  value: "'Ready'"
