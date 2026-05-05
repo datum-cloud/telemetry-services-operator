@@ -12,4 +12,5 @@ spec:
   includedPermissions:
     - telemetry.miloapis.com/exportpolicies.create
     - telemetry.miloapis.com/exportpolicies.update
+    - telemetry.miloapis.com/exportpolicies.patch
     - telemetry.miloapis.com/exportpolicies.delete
