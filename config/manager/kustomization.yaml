@@ -2,8 +2,8 @@ resources:
 - manager.yaml
 kind: Kustomization
 images:
-- name: ghcr.io/datum-cloud/telemetry-services-operator
-  newName: ghcr.io/datum-cloud/telemetry-services-operator
+- name: ghcr.io/milo-os/telemetry
+  newName: ghcr.io/milo-os/telemetry
   newTag: latest
 
   # Create a config map with the configuration to use for the operator.

@@ -15,7 +15,8 @@ jobs:
       attestations: write
     uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
     with:
-      image-name: telemetry-services-operator
+      image-name: telemetry
+      registry-organization: milo-os
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
@@ -26,8 +27,8 @@ jobs:
       packages: write
     uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
     with:
-      bundle-name: ghcr.io/datum-cloud/telemetry-services-operator-kustomize
+      bundle-name: ghcr.io/milo-os/telemetry-kustomize
       bundle-path: config
-      image-name: ghcr.io/datum-cloud/telemetry-services-operator
+      image-name: ghcr.io/milo-os/telemetry
       image-overlays: config/manager
     secrets: inherit
