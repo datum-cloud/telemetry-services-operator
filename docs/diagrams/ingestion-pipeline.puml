@@ -1,0 +1,32 @@
+@startuml ingestion-pipeline
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_LANDSCAPE()
+LAYOUT_WITH_LEGEND()
+
+title Customer-Facing Logs — Ingestion Pipeline (AI Edge v1)
+
+' External producers
+System_Ext(ai_edge, "AI Edge Data Plane", "Envoy + WAF sidecar handling customer HTTP traffic. Emits one OTLP log record per request (access) and per WAF rule match (waf).")
+
+' Catalog and per-tenant policies — read by the gateway via cached informers
+System_Ext(catalog, "Telemetry Catalog", "MonitoredResourceType and LogDefinition CRDs published by the telemetry-services-operator. Defines the legal label vocabulary per resource type.")
+System_Ext(policies, "Per-Tenant Policies", "LogCollectionPolicy, LogIngestionQuota, LogRedactionPolicy resources.")
+
+' Ingestion system boundary
+System_Boundary(ingest, "Ingestion Pipeline") {
+    Container(gateway, "OTel Collector Gateway", "OpenTelemetry Collector, regional Deployment", "Stamps cloud.account.id from caller workload identity. Validates resource attributes against catalog vocabulary. Derives tenant_id. Enforces collection policy and ingestion quota. Drops/hashes per redaction allowlist. Emits telemetry_ingestion_dropped_bytes_total per (project, category_group).")
+    ContainerDb(clickhouse, "ClickHouse", "platform_logs table", "MergeTree, partitioned by (tenant_id, month). Per-row TTL column set from category and tenant retention policy.")
+}
+
+' Producer flow (ingress)
+Rel_D(ai_edge, gateway, "Emit log records (OTLP/gRPC). 429 + Retry-After on quota exceed.")
+
+' Gateway lookups
+Rel_R(gateway, catalog, "Validate label vocabulary", "informer cache")
+Rel_R(gateway, policies, "Apply collection / quota / redaction", "informer cache")
+
+' Successful write
+Rel_D(gateway, clickhouse, "Batch insert validated records", "TCP/9000")
+
+@enduml

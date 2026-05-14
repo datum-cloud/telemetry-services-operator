@@ -173,6 +173,8 @@ discover available log types.
 
 ### 3. Ingestion Pipeline
 
+![Ingestion Pipeline](../diagrams/ingestion-pipeline.png)
+
 AI Edge data-plane components (Envoy + WAF sidecar) emit logs over OTLP to
 a regional OTel Collector gateway.
 
