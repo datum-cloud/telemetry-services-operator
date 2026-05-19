@@ -28,17 +28,26 @@ control-plane audit-log work that lives elsewhere.
 - Log schemas are declared once by the producing service and surface
   automatically as catalog metadata (resource types, label vocabulary, log
   definitions).
-- 7-day default retention for operational logs, with a longer default for
-  any log marked as `audit` category.
+- Service teams can see logs from their own service across all consumers
+  in the service's producer project; customers only see logs scoped to
+  their own project. This follows GCP's consumer / producer pattern, which
+  falls out naturally from Milo's project hierarchy (both tenants and
+  service producers are modelled as projects).
+- 7-day default retention for operational logs. Retention is platform-set
+  in v1; not user-controllable.
 
 ## Non-Goals (v1)
 
-- Control-plane audit log surface (covered by `milo-os/activity`; integrated
-  later via a shared catalog).
+- Control-plane audit logs. Audit logs are collected by the activity
+  system (`milo-os/activity`) and stored separately; they do not flow
+  through this pipeline.
 - Customer-configurable log export (`LogSource` in `ExportPolicy`) —
   deferred to a follow-on enhancement.
 - Body-content redaction via regex; v1 redacts at attribute level only.
 - Log-based metrics and alerting derived from log streams.
+- Per-project ingestion quota. Volume protection in v1 is platform-set
+  defaults at the gateway; a `LogIngestionQuota` resource is a follow-on
+  enhancement.
 
 ## Layers
 
@@ -70,6 +79,10 @@ spec:
         group: networking.datumapis.com
         kind: HTTPProxy
       labels:
+        - name: resource.group
+          description: API group of the resource (networking.datumapis.com).
+        - name: resource.kind
+          description: Resource kind (HTTPProxy).
         - name: resource.name
           description: Name of the HTTPProxy instance.
         - name: resource.namespace
@@ -93,8 +106,8 @@ spec:
         - name: http.request.duration_ms
           description: Request duration in milliseconds.
       destinations:
-        - audience: tenant
-        - audience: platform
+        - type: consumer  # written to the customer's project
+        - type: producer  # written to the networking service's producer project
       categoryGroups: [allLogs]
 
     - logID: networking.datumapis.com/httpproxy-waf
@@ -111,10 +124,23 @@ spec:
         - name: client.address
           description: Client IP.
       destinations:
-        - audience: tenant
-        - audience: platform
-      categoryGroups: [allLogs, audit]
+        - type: consumer
+        - type: producer
+      categoryGroups: [allLogs]
 ```
+
+A log entry is written once per declared destination:
+
+- `consumer` — the customer's project. They query their own project and
+  see only their data.
+- `producer` — the service's producer project (here, the networking
+  service's project). The Datum networking team queries that project and
+  sees logs across all consumers, with the originating consumer preserved
+  on each entry as a `consumer_name` label.
+
+Producer-only log types (no `consumer` destination) are also supported —
+useful for internal diagnostics that should never be visible to
+customers.
 
 ### 2. Platform Catalog
 
@@ -137,6 +163,8 @@ spec:
     group: networking.datumapis.com
     kind: HTTPProxy
   labels:
+    - name: resource.group
+    - name: resource.kind
     - name: resource.name
     - name: resource.namespace
     - name: hostname
@@ -162,8 +190,8 @@ spec:
     - name: client.address
     - name: http.request.duration_ms
   destinations:
-    - audience: tenant
-    - audience: platform
+    - type: consumer
+    - type: producer
   categoryGroups: [allLogs]
 ```
 
@@ -176,22 +204,54 @@ discover available log types.
 ![Ingestion Pipeline](../diagrams/ingestion-pipeline.png)
 
 AI Edge data-plane components (Envoy + WAF sidecar) emit logs over OTLP to
-a regional OTel Collector gateway.
+a regional OTel Collector gateway. Workload identity cannot be relied on
+to resolve the project — the source of these logs is typically a service
+component (e.g. Envoy) writing to a log sink, not a consumer-authored
+application running with the consumer's identity. Tenancy therefore has
+to travel on the log record itself.
+
+Every log record entering the gateway must carry tenancy labels stamped
+by the producing service:
+
+- `tenant.kind` — the type of tenant that generated the log
+  (`Project`, `Organization`, `User`).
+- `tenant.name` — the resource name of the tenant
+  (e.g. `personal-project-xyz`).
+
+Records missing these labels are rejected. Services are also responsible
+for stamping resource identity labels declared by their
+`MonitoredResourceType` (`resource.group`, `resource.kind`,
+`resource.name`, `resource.namespace`, and any service-specific labels
+such as `hostname`). The gateway enforces the vocabulary; it does not
+inject tenancy or instance identity.
 
 Gateway responsibilities:
 
 1. Receive OTLP log records.
-2. Stamp `cloud.account.id` (Milo project ID) immutably from the caller's
-   workload identity — customers cannot override.
+2. Validate that `tenant.kind` and `tenant.name` are present and refer to
+   a tenant the caller is authorised to write logs for.
 3. Look up the declared `MonitoredResourceType` for the entry's
    `resource_type` and validate that emitted resource attributes are a
    subset of the declared label vocabulary. Reject undeclared labels.
-4. Derive `tenant_id` from `cloud.account.id`.
-5. Write to ClickHouse via the `clickhouse` exporter.
+4. Resolve `tenant_id` from `(tenant.kind, tenant.name)` via the project
+   catalog.
+5. For each declared destination on the matching `LogDefinition`, emit one
+   log record:
+   - `consumer` → `tenant_id` resolved from the originating tenant.
+   - `producer` → `tenant_id` resolved from the service's producer
+     project, with `consumer_name` set to the originating tenant.
+6. Hand the resulting records off to NATS for durable buffering.
 
-Services are responsible for stamping the instance-identifying labels
-(e.g. `resource.name`, `resource.namespace`, `hostname`). The gateway
-enforces the vocabulary; it does not inject instance identity.
+A NATS JetStream subject sits between the gateway and ClickHouse. NATS
+gives us:
+
+- **Backpressure**. If ClickHouse is down or slow, the consumer pauses;
+  NATS retains the backlog rather than the gateway dropping records.
+- **Live tail**. The same stream feeds the Loki `/tail` handler, so tail
+  doesn't need to poll ClickHouse — see Live Tail below.
+
+A ClickHouse-writer consumer drains NATS into the `platform_logs` table
+in batches.
 
 ### 4. Storage
 
@@ -208,6 +268,11 @@ CREATE TABLE platform_logs (
     body                String,
     log_id              LowCardinality(String),
     resource_type       LowCardinality(String),
+    resource_group      LowCardinality(String),
+    resource_kind       LowCardinality(String),
+    resource_name       String,
+    resource_namespace  LowCardinality(String),
+    consumer_name       String,        -- empty on consumer-destination rows
     attributes_string   Map(String, String),
     resources_string    Map(String, String),
     trace_id            String,
@@ -215,52 +280,93 @@ CREATE TABLE platform_logs (
 )
 ENGINE = MergeTree()
 PARTITION BY (tenant_id, toYYYYMM(toDateTime(timestamp / 1e9)))
-ORDER BY (tenant_id, log_id, timestamp)
+ORDER BY (tenant_id, resource_type, resource_name, log_id, timestamp)
 TTL toDateTime(timestamp / 1e9) + INTERVAL 7 DAY DELETE;
 ```
 
-`log_id` and `resource_type` are promoted to top-level columns: both are
-low-cardinality and appear in nearly every query's filter clause.
+Top-level columns are chosen for the two common query shapes:
 
-Per-tenant retention overrides are applied via per-row `_row_ttl`
-attribute set by the gateway based on the log's `categoryGroups` and the
-tenant's retention policy (see Retention below).
+- **Per-resource**: "give me all access logs for proxy XYZ". Served by
+  the `(tenant_id, resource_type, resource_name, log_id)` prefix of the
+  sort key.
+- **Per-tenant**: "give me all logs for project X". Served by the
+  `tenant_id` prefix.
+
+`log_id`, `resource_type`, `resource_group`, `resource_kind`, and
+`resource_namespace` are all low-cardinality and appear in nearly every
+query's filter clause. `resource_name` is high-cardinality but is the
+primary drill-down key, so it earns a top-level column and a position in
+the sort key. `consumer_name` is populated only on producer-destination
+rows, so service teams can filter "show me logs for consumer X" without
+cross-tenant grants.
 
 ### 5. Query API — Loki-Compatible, Project-Scoped
 
 Customer query surface is a Loki-compatible HTTP API exposed under the
-project's telemetry namespace:
+project's control-plane endpoint:
 
 ```
-GET  /projects/{project}/telemetry/loki/api/v1/query
-GET  /projects/{project}/telemetry/loki/api/v1/query_range
-GET  /projects/{project}/telemetry/loki/api/v1/labels
-GET  /projects/{project}/telemetry/loki/api/v1/label/{name}/values
-GET  /projects/{project}/telemetry/loki/api/v1/series
-GET  /projects/{project}/telemetry/loki/api/v1/tail
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/query
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/query_range
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/labels
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/label/{name}/values
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/series
+GET  {project-control-plane-endpoint}/telemetry/loki/api/v1/tail
 ```
 
-The Milo gateway resolves `{project}` to a `tenant_id` and enforces IAM
+`{project-control-plane-endpoint}` is the same per-project control-plane
+URL Milo already issues for Kubernetes API access; the telemetry handler
+mounts at `/telemetry/...` under it. The project is therefore resolved
+from the endpoint itself — no `{project}` placeholder in the path, no
+`X-Scope-OrgID` header. `X-Scope-OrgID` sent by Grafana is ignored.
+
+The Milo gateway resolves the endpoint to a `tenant_id` and enforces IAM
 before the request reaches the Loki handler. The handler itself is a pure
 query layer:
 
 - Parses LogQL.
-- Translates to ClickHouse SQL: stream selectors → `resources_string` map
-  lookups; line filters → `body LIKE` / full-text; parsed field filters →
-  `attributes_string` lookups.
-- Executes with `tenant_id` already injected from URL context.
+- Translates to ClickHouse SQL: stream selectors → top-level column
+  lookups (`tenant_id`, `resource_type`, `resource_name`, `log_id`, …)
+  where possible, `resources_string` map lookups otherwise; line filters
+  → `body LIKE` / full-text; parsed field filters → `attributes_string`
+  lookups.
+- Executes with `tenant_id` already injected from the endpoint context.
 - Serialises results in Loki's response format.
-
-`X-Scope-OrgID` sent by Grafana is ignored — the project in the URL is
-authoritative.
 
 Label and series discovery is served from the `MonitoredResourceType`
 catalog rather than from ClickHouse, so discovery works on empty projects
 and Grafana's stream-selector UI populates correctly on first open.
 
-Grafana datasource configuration: base URL
-`https://api.datum.net/projects/{project}/telemetry/`, type Loki, no
-custom plugin.
+Grafana datasource configuration: base URL set to the project's
+control-plane endpoint with `/telemetry/` appended, type Loki, no custom
+plugin.
+
+#### Example queries
+
+Consumer querying their own project:
+
+```logql
+{log_id="networking.datumapis.com/httpproxy-access", resource_name="api-gateway"}
+  | json | http_response_status_code >= 500
+```
+
+Service team querying the networking service's producer project — across
+all consumers, or drilling into one:
+
+```logql
+# Aggregate error rate by consumer
+sum by (consumer_name) (
+  rate({log_id="networking.datumapis.com/httpproxy-access"}
+    | json | http_response_status_code >= 500 [5m])
+)
+
+# Drill into a specific consumer
+{log_id="networking.datumapis.com/httpproxy-access", consumer_name="ecommerce-co"}
+  | json | http_response_status_code >= 500
+```
+
+No cross-tenant grants are needed for either side — each principal has
+IAM on the project (consumer or producer) whose endpoint they're querying.
 
 A secondary `LogQuery` virtual resource (Kubernetes-native, modelled on
 `AuditLogQuery` in `milo-os/activity`) is retained for kubectl-native and
@@ -268,52 +374,46 @@ GitOps workflows. It shares the same LogQL → SQL translation layer.
 
 ### 6. Access Control
 
-- Milo IAM gates access at the project boundary via standard Kubernetes
-  RBAC on the project's telemetry endpoint.
-- `LogDefinition.spec.categoryGroups` provides a secondary access
-  dimension: `audit` requires a distinct permission from `allLogs`,
-  matching GCP's `roles/logging.viewAccessor` pattern scoped to a log
-  view. The query layer filters out log IDs the caller cannot access
-  before executing the SQL.
+Milo IAM gates access at the project boundary via standard Kubernetes
+RBAC on the project's telemetry endpoint. Because the URL is the project
+control-plane endpoint, the same RBAC that protects the rest of the
+project's resources protects log queries — no separate access model.
+
+Consumer vs. producer separation is what gives service teams visibility
+across all consumers of their service: a Datum networking SRE needs IAM
+only on the networking service's producer project to see access logs for
+every customer's `HTTPProxy`. No cross-tenant grant is required.
 
 ## Cross-Cutting Concerns
 
 ### Retention
 
-Fixed tiered defaults; no free-form per-project retention in v1.
+Fixed defaults; not user-controllable in v1.
 
-| Category Group | Default Retention | Disable-able |
-|---|---|---|
-| `allLogs`      | 7 days    | Yes (opt-in collection) |
-| `audit`        | 400 days  | No (compliance signal)  |
+| Category Group | Retention |
+|---|---|
+| `allLogs`      | 7 days |
 
-Paid retention overrides are applied per category group on a project, not
-per log ID. Implemented as a TTL adjustment column populated by the
-gateway at write time so existing rows are not rewritten when overrides
-change.
-
-### Ingestion Quota
-
-A new `telemetry.miloapis.com/LogIngestionQuota` resource integrates with
-the standard Milo quota system. Quota is dimensioned by
-`(project, category_group)` in bytes/second. On exceed:
-
-- Gateway returns 429 with `Retry-After`.
-- A per-tenant `telemetry_ingestion_dropped_bytes_total` counter is
-  exposed via the same Loki API so customers can see drops.
-- No silent drops.
+Implemented via the table TTL on the `timestamp` column. Per-project or
+per-category retention overrides are a follow-on enhancement.
 
 ### Default Enablement
 
-- `allLogs` collection is opt-in per project via a `LogCollectionPolicy`
-  resource. Customers don't get surprise bills from log volume tracking
-  workload activity they didn't request.
-- `audit` category is on by default and not disable-able. Volume is
-  bounded by control-plane API traffic, not workload activity.
+`allLogs` collection is opt-in per project via a `LogCollectionPolicy`
+resource. Customers don't get surprise bills from log volume tracking
+workload activity they didn't request.
 
 For v1 (AI Edge only): proxy access logs default off, WAF events default
-on (they fall into both `allLogs` and `audit` and the volume is bounded
-by request rate × match rate, not full request rate).
+on (the volume is bounded by request rate × match rate, not full request
+rate).
+
+### Live Tail
+
+The Loki `/tail` endpoint is served by a small handler that subscribes to
+the NATS subject the ingestion pipeline already writes to, filters by
+`tenant_id` and the stream selector from the request, and streams
+matching records over the WebSocket. This avoids polling ClickHouse and
+keeps tail latency in the low hundreds of milliseconds.
 
 ### Redaction
 
@@ -338,24 +438,26 @@ ServiceConfiguration
 In dependency order:
 
 1. CRDs: `MonitoredResourceType`, `LogDefinition`,
-   `LogCollectionPolicy`, `LogIngestionQuota`, `LogRedactionPolicy`,
-   `LogQuery`.
-2. Fan-out controllers in this operator for the first three.
-3. ClickHouse `platform_logs` table and OTel Collector gateway with
-   tenant stamping, label-vocabulary validation, and quota enforcement.
-4. AI Edge data-plane integration: Envoy access log + WAF event OTLP
-   exporters; `ServiceConfiguration` for `networking-datumapis-com` with
-   the two log definitions.
-5. Loki API handler (`/projects/{project}/telemetry/loki/api/v1/...`)
-   backed by a LogQL → SQL translator.
-6. Catalog-backed labels/series discovery.
-7. Grafana datasource documentation.
+   `LogCollectionPolicy`, `LogRedactionPolicy`, `LogQuery`.
+2. Fan-out controllers in this operator for `MonitoredResourceType` and
+   `LogDefinition`.
+3. NATS JetStream subject and ClickHouse `platform_logs` table.
+4. OTel Collector gateway with tenancy-label validation
+   (`tenant.kind` / `tenant.name`), label-vocabulary validation, and
+   per-destination fan-out (`consumer` / `producer`) into NATS.
+5. ClickHouse writer consumer draining NATS into `platform_logs`.
+6. AI Edge data-plane integration: Envoy access log + WAF event OTLP
+   exporters that stamp tenancy and resource identity labels;
+   `ServiceConfiguration` for `networking-datumapis-com` with the two log
+   definitions.
+7. Loki API handler at
+   `{project-control-plane-endpoint}/telemetry/loki/api/v1/...` backed by
+   a LogQL → SQL translator, plus the NATS-backed `/tail` handler.
+8. Catalog-backed labels/series discovery.
+9. Grafana datasource documentation.
 
 ## Open Questions
 
-- Live tail backend: ClickHouse polling vs. a separate Kafka topic
-  consumed by the tail handler. Polling is simpler; Kafka is lower
-  latency. Likely poll for v1.
 - Whether `LogCollectionPolicy` is project-scoped or finer-grained (per
   `HTTPProxy`). Project-scoped is the simpler v1; finer granularity is a
   future enhancement once we see usage patterns.
