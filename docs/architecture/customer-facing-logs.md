@@ -128,17 +128,13 @@ spec:
       monitoredResourceType: networking.datumapis.com/HTTPProxy
       entrySchema:
         - name: http.request.id
-          description: Matches the http.request.id on the paired httpproxy-access entry.
+          description: Matches the http.request.id on the paired httpproxy-access entry. PoP, user agent, response status, and other request-level context are joined from there.
         - name: waf.rule.id
           description: Identifier of the WAF rule that matched.
         - name: waf.action
           description: Action taken for this rule — block, log, challenge.
         - name: waf.severity
           description: Severity classification of the matched rule.
-        - name: client.address
-          description: Client IP.
-        - name: edge.pop.ingress
-          description: PoP code that ran the WAF evaluation.
       destinations:
         - type: consumer
         - type: producer
@@ -467,10 +463,15 @@ query through a join. The lifecycle view itself is built by a single
 ```
 
 `edge.pop.ingress` (where the request was received) and
-`edge.pop.upstream` (where it was routed to, when different) populate
-the geo/routing portion of that view. Both are stamped at emission by
-the data plane — they're not resource identity, since one `HTTPProxy`
-serves from many PoPs.
+`edge.pop.upstream` (where it was routed to, when different) live only
+on the access log; WAF entries inherit them by joining on
+`http.request.id`. They're emission context, not resource identity —
+one `HTTPProxy` serves from many PoPs — so they're stamped at emission
+by the data plane and aren't part of the `MonitoredResourceType`
+vocabulary. The same reasoning is why the WAF entry schema is lean:
+client IP, user agent, response status, PoP — anything that already
+exists on the paired access entry is reached via the join rather than
+duplicated on every matched-rule row.
 
 ### Redaction
 
