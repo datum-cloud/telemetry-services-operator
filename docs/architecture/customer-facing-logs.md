@@ -95,6 +95,8 @@ spec:
       description: One entry per HTTP request handled by the proxy.
       monitoredResourceType: networking.datumapis.com/HTTPProxy
       entrySchema:
+        - name: http.request.id
+          description: Per-request correlation ID (Envoy x-request-id).
         - name: http.request.method
           description: HTTP method (GET, POST, etc).
         - name: http.response.status_code
@@ -103,8 +105,18 @@ spec:
           description: Request path.
         - name: client.address
           description: Client IP.
+        - name: user_agent.original
+          description: Verbatim User-Agent header sent by the client.
         - name: http.request.duration_ms
           description: Request duration in milliseconds.
+        - name: edge.pop.ingress
+          description: PoP code that received the request (e.g. cdg1).
+        - name: edge.pop.upstream
+          description: PoP that routed to the upstream when different from ingress; empty when handled at ingress.
+        - name: waf.outcome
+          description: Summary of WAF decision for this request — allowed, blocked, or challenged.
+        - name: waf.matched_rules
+          description: Number of WAF rules that matched on this request. Non-zero implies a paired httpproxy-waf entry exists per matched rule.
       destinations:
         - type: consumer  # written to the customer's project
         - type: producer  # written to the networking service's producer project
@@ -115,14 +127,18 @@ spec:
       description: One entry per WAF rule evaluation that matched or blocked.
       monitoredResourceType: networking.datumapis.com/HTTPProxy
       entrySchema:
+        - name: http.request.id
+          description: Matches the http.request.id on the paired httpproxy-access entry.
         - name: waf.rule.id
           description: Identifier of the WAF rule that matched.
         - name: waf.action
-          description: Action taken — block, log, challenge.
+          description: Action taken for this rule — block, log, challenge.
         - name: waf.severity
           description: Severity classification of the matched rule.
         - name: client.address
           description: Client IP.
+        - name: edge.pop.ingress
+          description: PoP code that ran the WAF evaluation.
       destinations:
         - type: consumer
         - type: producer
@@ -184,11 +200,17 @@ spec:
   displayName: HTTP Proxy Access Log
   monitoredResourceType: networking.datumapis.com/HTTPProxy
   entrySchema:
+    - name: http.request.id
     - name: http.request.method
     - name: http.response.status_code
     - name: url.path
     - name: client.address
+    - name: user_agent.original
     - name: http.request.duration_ms
+    - name: edge.pop.ingress
+    - name: edge.pop.upstream
+    - name: waf.outcome
+    - name: waf.matched_rules
   destinations:
     - type: consumer
     - type: producer
@@ -414,6 +436,41 @@ the NATS subject the ingestion pipeline already writes to, filters by
 `tenant_id` and the stream selector from the request, and streams
 matching records over the WebSocket. This avoids polling ClickHouse and
 keeps tail latency in the low hundreds of milliseconds.
+
+### Request Correlation
+
+A single HTTP request through AI Edge produces one access log entry
+(`httpproxy-access`) and zero-or-more WAF entries (`httpproxy-waf`, one
+per matched rule). All of them carry the same `http.request.id`
+(Envoy's `x-request-id`, which already propagates through the filter
+chain to the WAF sidecar). That's the join key.
+
+The model favours denormalisation on the access log for the common case:
+
+- `waf.outcome` (`allowed` / `blocked` / `challenged`) and
+  `waf.matched_rules` (count) are stamped directly on the access log,
+  so the high-frequency "show me blocked requests" query is a single
+  stream filter, not a join — same shape as GCP Cloud Armor's
+  `enforcedSecurityPolicy.outcome` on LB access logs.
+- The per-rule `httpproxy-waf` entries carry the rule id, action, and
+  severity, joined back to the access log by `http.request.id` when the
+  customer needs to drill in to "which rules fired on this request."
+
+This supports a per-request lifecycle view (one row per request,
+expandable to show every WAF rule that fired) without forcing every
+query through a join. The lifecycle view itself is built by a single
+`http.request.id` filter across both streams:
+
+```logql
+{log_id=~"networking.datumapis.com/httpproxy-(access|waf)"}
+  | json | http_request_id="phl94-1779186433904-397d1bd984ce"
+```
+
+`edge.pop.ingress` (where the request was received) and
+`edge.pop.upstream` (where it was routed to, when different) populate
+the geo/routing portion of that view. Both are stamped at emission by
+the data plane — they're not resource identity, since one `HTTPProxy`
+serves from many PoPs.
 
 ### Redaction
 
