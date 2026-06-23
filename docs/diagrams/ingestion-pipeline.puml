@@ -4,33 +4,29 @@
 LAYOUT_LANDSCAPE()
 LAYOUT_WITH_LEGEND()
 
-title Customer-Facing Logs — Ingestion Pipeline (AI Edge v1)
+title Customer-Facing Logs — Ingestion Pipeline
 
-' External producers
-System_Ext(ai_edge, "AI Edge Data Plane", "Envoy + WAF sidecar handling customer HTTP traffic. Emits one OTLP log record per request (access) and per WAF rule match (waf). Stamps tenant.kind / tenant.name and resource identity labels on every record.")
+System_Ext(ai_edge, "AI Edge Data Plane", "Envoy + WAF sidecar. HTTPProxy controller stamps org_id, project_id, and resource identity into Envoy xDS access log config at reconcile time — no per-record catalog lookup.")
 
-' Catalog and per-tenant policies — read by the gateway via cached informers
-System_Ext(catalog, "Telemetry Catalog", "MonitoredResourceType and LogDefinition CRDs published by the telemetry-services-operator. Defines the legal label vocabulary per resource type and the consumer / producer destinations per log.")
-System_Ext(policies, "Per-Tenant Policies", "LogCollectionPolicy and LogRedactionPolicy resources.")
+System_Ext(compute, "Compute Workloads", "Unikraft VMs on Kraftlet nodes. OTel Collector DaemonSet (contrib) scrapes /var/log/pods via filelog receiver. k8sattributes processor reads datum.org_id and datum.project_id from pod labels stamped by unikraft-provider.")
 
-' Ingestion system boundary
-System_Boundary(ingest, "Ingestion Pipeline") {
-    Container(gateway, "OTel Collector Gateway", "OpenTelemetry Collector, regional Deployment", "Validates tenant.kind / tenant.name. Resolves tenant_id via the project catalog. Validates resource attributes against catalog vocabulary. Fans out one record per declared destination (consumer / producer), stamping consumer_name on producer records. Drops/hashes per redaction allowlist.")
-    ContainerQueue(nats, "NATS JetStream", "Durable subject", "Buffers records between the gateway and ClickHouse. Provides backpressure if ClickHouse is down and feeds the live-tail handler.")
-    Container(writer, "ClickHouse Writer", "Go consumer", "Drains NATS into platform_logs in batches.")
-    ContainerDb(clickhouse, "ClickHouse", "platform_logs table", "MergeTree, partitioned by (tenant_id, month). Sorted by (tenant_id, resource_type, resource_name, log_id, timestamp). Table TTL on timestamp.")
+System_Ext(catalog, "Telemetry Catalog", "LogDefinition and MonitoredResourceType CRDs published by the telemetry-services-operator. Defines legal log IDs and resource attribute vocabulary per resource type.")
+
+System_Boundary(edge, "Edge Cluster") {
+    Container(gateway, "OTLP Gateway", "Go service", "Validates org_id and project_id are present. Validates log_id against cached LogDefinition (Kubernetes informer, no API call per record). Validates resource attribute vocabulary. Publishes one NATS message per record.")
+    ContainerQueue(nats_edge, "NATS Edge", "NATS leaf node", "Buffers records; forwards to hub via leaf node connection. Provides backpressure if hub is slow.")
 }
 
-' Producer flow (ingress)
-Rel_D(ai_edge, gateway, "Emit log records (OTLP/gRPC) with tenancy + resource labels.")
+System_Boundary(hub, "Hub Cluster") {
+    ContainerQueue(nats_hub, "NATS Hub", "NATS JetStream", "Durable stream per subject telemetry.logs.<org_id>.<project_id>.<log_id>. ClickHouse pulls directly; live-tail handler subscribes independently.")
+    ContainerDb(clickhouse, "ClickHouse", "platform_logs (MergeTree)", "logs_ingest table uses ENGINE=NATS to pull from JetStream. Materialized view extracts columns into platform_logs. Partitioned by (org_id, month). Sorted by (org_id, project_id, resource_type, resource_name, log_id, timestamp). TTL 7 days.")
+}
 
-' Gateway lookups
-Rel_R(gateway, catalog, "Validate label vocabulary; resolve destinations", "informer cache")
-Rel_R(gateway, policies, "Apply collection / redaction", "informer cache")
-
-' Successful write path
-Rel_D(gateway, nats, "Publish per-destination records", "NATS")
-Rel_D(nats, writer, "Consume", "NATS")
-Rel_D(writer, clickhouse, "Batch insert", "TCP/9000")
+Rel(ai_edge, gateway, "OTLP/HTTP log records", "OTLP")
+Rel(compute, gateway, "OTLP/HTTP log records", "OTLP")
+Rel(gateway, catalog, "Validate log_id and attribute vocabulary", "informer cache")
+Rel(gateway, nats_edge, "Publish one message per record", "NATS")
+Rel(nats_edge, nats_hub, "Leaf node forwarding", "NATS")
+Rel(nats_hub, clickhouse, "Pull via NATS engine table", "JetStream")
 
 @enduml
