@@ -457,8 +457,6 @@ Top-level columns are chosen for the two common query shapes:
 
 ### 5. Query API
 
-![Query Path](../diagrams/query-path.png)
-
 #### Why not Loki-compatible
 
 An earlier draft of this design used a Loki-compatible API
