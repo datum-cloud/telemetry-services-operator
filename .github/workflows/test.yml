@@ -23,6 +23,8 @@ jobs:
             test-cmd: go test ./...
           - module: processor/unbatchprocessor
             test-cmd: go test ./...
+          - module: queryapi
+            test-cmd: task test
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
