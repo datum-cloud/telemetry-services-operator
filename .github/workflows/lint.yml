@@ -23,3 +23,22 @@ jobs:
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.2
+
+  lint-queryapi:
+    name: Run on Ubuntu (queryapi)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: queryapi/go.mod
+
+      - name: Run linter
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.1.2
+          working-directory: queryapi
+          args: --config=../.golangci.yml

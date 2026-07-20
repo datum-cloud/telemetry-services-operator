@@ -23,3 +23,20 @@ jobs:
         run: |
           go mod tidy
           make test
+
+  test-queryapi:
+    name: Run on Ubuntu (queryapi)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: queryapi/go.mod
+
+      - name: Running Tests
+        run: |
+          cd queryapi && go mod tidy && cd ..
+          make queryapi-test

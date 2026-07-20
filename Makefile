@@ -39,6 +39,20 @@ all: build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
+##@ CI
+
+# ci reproduces exactly what .github/workflows/lint.yml and test.yml run, in
+# both modules, so CI failures can be caught and fixed locally before pushing.
+# Update this alongside those workflow files if either one changes.
+.PHONY: ci
+ci: ## Run everything CI runs: lint and test, for both the operator and queryapi modules.
+	go mod tidy
+	$(MAKE) test
+	$(MAKE) lint
+	cd queryapi && go mod tidy
+	$(MAKE) queryapi-test
+	$(MAKE) queryapi-lint
+
 ##@ Development
 
 .PHONY: manifests
@@ -135,6 +149,42 @@ build-installer: manifests generate kustomize ## Generate a consolidated YAML wi
 	cd config/manager && $(KUSTOMIZE) edit set image ghcr.io/milo-os/telemetry=${IMG}
 	$(KUSTOMIZE) build config/default > dist/install.yaml
 
+##@ Query API
+
+# queryapi is its own Go module (see queryapi/go.mod) so it doesn't inherit
+# the operator's controller-runtime/client-go dependency graph. These targets
+# mirror the top-level fmt/vet/test/lint/build/run targets above, scoped to
+# that module, and are what CI runs — use them locally to reproduce CI
+# exactly.
+
+.PHONY: queryapi-fmt
+queryapi-fmt: ## Run go fmt against queryapi code.
+	cd queryapi && go fmt ./...
+
+.PHONY: queryapi-vet
+queryapi-vet: ## Run go vet against queryapi code.
+	cd queryapi && go vet ./...
+
+.PHONY: queryapi-test
+queryapi-test: queryapi-fmt queryapi-vet ## Run queryapi tests.
+	cd queryapi && go test ./... -coverprofile cover.out
+
+.PHONY: queryapi-lint
+queryapi-lint: golangci-lint ## Run golangci-lint against queryapi.
+	cd queryapi && $(GOLANGCI_LINT) run --config ../.golangci.yml ./...
+
+.PHONY: queryapi-lint-fix
+queryapi-lint-fix: golangci-lint ## Run golangci-lint against queryapi and perform fixes.
+	cd queryapi && $(GOLANGCI_LINT) run --config ../.golangci.yml --fix ./...
+
+.PHONY: queryapi-build
+queryapi-build: queryapi-fmt queryapi-vet ## Build the queryapi binary.
+	cd queryapi && go build -o ../bin/queryapi ./cmd
+
+.PHONY: queryapi-run
+queryapi-run: queryapi-fmt queryapi-vet ## Run queryapi from your host.
+	cd queryapi && go run ./cmd
+
 ##@ Deployment
 
 ifndef ignore-not-found
@@ -188,7 +238,7 @@ CONTROLLER_TOOLS_VERSION ?= v0.17.2
 ENVTEST_VERSION ?= $(shell go list -m -f "{{ .Version }}" sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
 #ENVTEST_K8S_VERSION is the version of Kubernetes to use for setting up ENVTEST binaries (i.e. 1.31)
 ENVTEST_K8S_VERSION ?= $(shell go list -m -f "{{ .Version }}" k8s.io/api | awk -F'[v.]' '{printf "1.%d", $$3}')
-GOLANGCI_LINT_VERSION ?= v1.63.4
+GOLANGCI_LINT_VERSION ?= v2.1.2
 
 # renovate: datasource=go depName=fybrik.io/crdoc
 CRDOC_VERSION ?= v0.6.4
@@ -219,7 +269,7 @@ $(ENVTEST): $(LOCALBIN)
 .PHONY: golangci-lint
 golangci-lint: $(GOLANGCI_LINT) ## Download golangci-lint locally if necessary.
 $(GOLANGCI_LINT): $(LOCALBIN)
-	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
+	$(call go-install-tool,$(GOLANGCI_LINT),github.com/golangci/golangci-lint/v2/cmd/golangci-lint,$(GOLANGCI_LINT_VERSION))
 
 .PHONY: crdoc
 crdoc: ## Download crdoc locally if necessary.
