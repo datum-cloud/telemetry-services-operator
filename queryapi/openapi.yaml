@@ -1,0 +1,304 @@
+openapi: 3.0.3
+info:
+  title: Telemetry Query Layer API
+  description: >-
+    Tenant-scoped query API over ClickHouse for logs and metrics, serving
+    `datumctl` and the customer cloud portal. Design rationale lives in
+    datum-cloud/enhancements, enhancements/telemetry/query-layer/README.md
+    (see the "HTTP API contract" section).
+  version: "0.1.0"
+servers:
+  - url: "/projects/{projectId}/control-plane/apis/{telemetryGroup}/v1"
+    description: >-
+      Per-project APIService path. projectId and telemetryGroup are resolved
+      by the kube-aggregator proxy chain, not supplied by API clients directly;
+      they appear here only because OpenAPI requires a concrete server URL
+      template.
+    variables:
+      projectId:
+        default: current
+      telemetryGroup:
+        default: telemetry.datumapis.com
+
+security:
+  - bearerAuth: []
+
+paths:
+  /logs:
+    get:
+      operationId: queryLogs
+      summary: Buffered log query over a time window
+      tags: [logs]
+      parameters:
+        - $ref: "#/components/parameters/LogQLQuery"
+        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Until"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Matching log lines, most recent first.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LogsResponse"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /logs/tail:
+    get:
+      operationId: tailLogs
+      summary: Streaming log query (datumctl logs --tail)
+      description: >-
+        Chunked HTTP response; the connection stays open and new matching log
+        lines are flushed as they are ingested. Delivery is at-least-once —
+        duplicate lines are possible at cursor boundaries, matching the
+        `kubectl logs --follow` contract. Each chunk is one JSON-encoded
+        LogEntry object, newline-delimited.
+      tags: [logs]
+      parameters:
+        - $ref: "#/components/parameters/LogQLQuery"
+        - $ref: "#/components/parameters/Since"
+      responses:
+        "200":
+          description: Newline-delimited stream of LogEntry objects.
+          content:
+            application/x-ndjson:
+              schema:
+                $ref: "#/components/schemas/LogEntry"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /metrics/query:
+    get:
+      operationId: queryMetricsInstant
+      summary: Instant metric query (single point in time)
+      tags: [metrics]
+      parameters:
+        - $ref: "#/components/parameters/PromQLQuery"
+        - name: time
+          in: query
+          description: Evaluation instant. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: One sample per matching series, evaluated at `time`.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsResponse"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /metrics/query_range:
+    get:
+      operationId: queryMetricsRange
+      summary: Range metric query (matrix over [start,end] by step)
+      tags: [metrics]
+      parameters:
+        - $ref: "#/components/parameters/PromQLQuery"
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date-time
+        - name: step
+          in: query
+          required: true
+          description: Resolution step duration, e.g. "30s", "5m".
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A series of samples per matching series across the range.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MetricsResponse"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: >-
+        Forwarded through milo-api; project_id is resolved server-side from
+        this token and is never a client-supplied parameter.
+
+  parameters:
+    LogQLQuery:
+      name: query
+      in: query
+      required: true
+      description: >-
+        LogQL subset: label matchers (`{service_name="foo", severity="ERROR"}`)
+        and line filters (`|= "text"`, `!= "text"`, `|~ "regex"`, `!~ "regex"`).
+        Metric-style aggregations (count_over_time, rate), parser expressions
+        (| json, | logfmt), and line_format/label_format are rejected with 400.
+      schema:
+        type: string
+      example: '{service_name="compute-workload", severity="ERROR"} |= "timeout"'
+
+    PromQLQuery:
+      name: query
+      in: query
+      required: true
+      description: >-
+        PromQL-style label-matched series selector, e.g.
+        `cpu_usage{service="foo"}`. Aggregation functions (sum, avg, rate) are
+        not yet supported and are rejected with 400.
+      schema:
+        type: string
+      example: 'cpu_usage{service="compute-workload"}'
+
+    Since:
+      name: since
+      in: query
+      description: >-
+        Relative ("1h", "30m") or absolute timestamp. Filters ObservedTimestamp.
+        Defaults to 1h before now.
+      schema:
+        type: string
+
+    Until:
+      name: until
+      in: query
+      description: Relative or absolute timestamp upper bound. Defaults to now.
+      schema:
+        type: string
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        default: 100
+        maximum: 1000
+        minimum: 1
+
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque pagination cursor from a previous response's nextCursor.
+      schema:
+        type: string
+
+  responses:
+    BadQuery:
+      description: >-
+        The query parameter failed to parse, or used a construct outside the
+        supported LogQL/PromQL subset.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnexpectedError:
+      description: >-
+        Any error status not explicitly listed above, including 501 Not
+        Implemented — every handler in the current scaffold is a stub and
+        returns this until the ClickHouse-backed implementation lands.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    LogEntry:
+      type: object
+      required: [timestamp, service, severity, body]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: ObservedTimestamp — set by the OTel Collector on receipt.
+        service:
+          type: string
+        severity:
+          type: string
+          example: ERROR
+        body:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+
+    LogsResponse:
+      type: object
+      required: [results]
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/LogEntry"
+        nextCursor:
+          type: string
+
+    MetricSample:
+      type: object
+      required: [metric, values]
+      properties:
+        metric:
+          type: object
+          additionalProperties:
+            type: string
+          description: Label set for this series, including __name__.
+        values:
+          type: array
+          description: >-
+            [unixTimestamp, stringValue] pairs. A single-element array for
+            /metrics/query; one element per step for /metrics/query_range.
+          items:
+            type: array
+            items: {}
+            minItems: 2
+            maxItems: 2
+
+    MetricsResponse:
+      type: object
+      required: [result]
+      properties:
+        result:
+          type: array
+          items:
+            $ref: "#/components/schemas/MetricSample"
