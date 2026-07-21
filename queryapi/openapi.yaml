@@ -231,37 +231,12 @@ paths:
           $ref: "#/components/responses/UnexpectedError"
 
   /api/v1/query:
-    get:
-      operationId: promQuery
-      summary: Instant metric query (mimics Prometheus's /api/v1/query)
-      tags: [metrics]
-      parameters:
-        - $ref: "#/components/parameters/PromQLQuery"
-        - name: time
-          in: query
-          description: Evaluation instant. Defaults to now.
-          schema:
-            type: string
-            format: date-time
-        - $ref: "#/components/parameters/QueryTimeout"
-      responses:
-        "200":
-          description: One sample per matching series, evaluated at `time`.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PromInstantQueryResponse"
-        "400":
-          $ref: "#/components/responses/BadQuery"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        default:
-          $ref: "#/components/responses/UnexpectedError"
     post:
-      operationId: promQueryForm
+      operationId: promQuery
       summary: >-
-        Instant metric query, form-encoded (Grafana's Prometheus datasource
-        POSTs by default; this is the same operation as GET /api/v1/query)
+        Instant metric query, form-encoded (mimics Prometheus's
+        /api/v1/query; POST-only, matching Grafana's Prometheus datasource
+        default request mode)
       tags: [metrics]
       requestBody:
         required: true
@@ -284,39 +259,12 @@ paths:
           $ref: "#/components/responses/UnexpectedError"
 
   /api/v1/query_range:
-    get:
-      operationId: promQueryRange
-      summary: Range metric query (mimics Prometheus's /api/v1/query_range)
-      tags: [metrics]
-      parameters:
-        - $ref: "#/components/parameters/PromQLQuery"
-        - $ref: "#/components/parameters/Start"
-        - $ref: "#/components/parameters/End"
-        - name: step
-          in: query
-          required: true
-          description: Resolution step duration, e.g. "30s", "5m".
-          schema:
-            type: string
-        - $ref: "#/components/parameters/QueryTimeout"
-      responses:
-        "200":
-          description: A series of samples per matching series across the range.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PromRangeQueryResponse"
-        "400":
-          $ref: "#/components/responses/BadQuery"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        default:
-          $ref: "#/components/responses/UnexpectedError"
     post:
-      operationId: promQueryRangeForm
+      operationId: promQueryRange
       summary: >-
-        Range metric query, form-encoded (Grafana's Prometheus datasource
-        POSTs by default; this is the same operation as GET /api/v1/query_range)
+        Range metric query, form-encoded (mimics Prometheus's
+        /api/v1/query_range; POST-only, matching Grafana's Prometheus
+        datasource default request mode)
       tags: [metrics]
       requestBody:
         required: true
@@ -476,18 +424,6 @@ components:
         type: string
       example: '{service_name="compute-workload", severity="ERROR"} |= "timeout"'
 
-    PromQLQuery:
-      name: query
-      in: query
-      required: true
-      description: >-
-        PromQL-style label-matched series selector, e.g.
-        `cpu_usage{service="foo"}`. Aggregation functions (sum, avg, rate) are
-        not yet supported and are rejected with 400.
-      schema:
-        type: string
-      example: 'cpu_usage{service="compute-workload"}'
-
     Start:
       name: start
       in: query
@@ -523,16 +459,6 @@ components:
         type: string
         enum: [backward, forward]
         default: backward
-
-    QueryTimeout:
-      name: timeout
-      in: query
-      description: >-
-        Evaluation timeout, e.g. "30s", matching Prometheus's own /query and
-        /query_range timeout param. Accepted for client compatibility; not
-        yet enforced.
-      schema:
-        type: string
 
   responses:
     BadQuery:
@@ -662,6 +588,11 @@ components:
       properties:
         query:
           type: string
+          description: >-
+            PromQL-style label-matched series selector, e.g.
+            `cpu_usage{service="foo"}`. Aggregation functions (sum, avg,
+            rate) are not yet supported and are rejected with 400.
+          example: 'cpu_usage{service="compute-workload"}'
         time:
           type: string
         timeout:
@@ -673,6 +604,11 @@ components:
       properties:
         query:
           type: string
+          description: >-
+            PromQL-style label-matched series selector, e.g.
+            `cpu_usage{service="foo"}`. Aggregation functions (sum, avg,
+            rate) are not yet supported and are rejected with 400.
+          example: 'cpu_usage{service="compute-workload"}'
         start:
           type: string
         end:
