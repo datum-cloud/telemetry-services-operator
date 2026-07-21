@@ -6,7 +6,34 @@ info:
     `datumctl` and the customer cloud portal. Design rationale lives in
     datum-cloud/enhancements, enhancements/telemetry/query-layer/README.md
     (see the "HTTP API contract" section).
-  version: "0.1.0"
+
+
+    The log endpoints below deliberately mimic Loki's HTTP API
+    (`/loki/api/v1/query`, `/query_range`, `/label`, `/label/{name}/values`,
+    `/series`) rather than a bespoke shape, so existing Loki-aware tooling —
+    Grafana's Loki datasource in particular — can query this service with no
+    custom integration. LogQL itself was never the mismatch (it's Loki's own
+    query language, and the subset described below is what this service
+    accepts); only the endpoint paths and response envelope changed to match.
+
+
+    Two things this does **not** adopt from real Loki: (1) tenancy is never
+    read from a client-supplied header (real Loki uses `X-Scope-OrgID`, which
+    puts tenancy in the caller's control — see the query-layer design doc's
+    rejection of that model). `project_id` is always resolved server-side from
+    the request context `milo-api` populates, for every endpoint below
+    including label/series discovery — there is no code path where a client
+    can see another project's labels, series, or log lines. (2) `/loki/api/v1/tail`
+    (Loki's live-tail endpoint, a WebSocket upgrade) is intentionally not
+    included in this revision — tracked as a follow-up once the tail
+    transport (chunked HTTP vs. WebSocket) is decided.
+
+
+    Metrics (`/metrics/query`, `/metrics/query_range`) are a separate concern
+    from the Loki mimicry above — Loki has no metrics endpoints of its own —
+    and are specced here so `datumctl`/portal work can start, but return 501
+    until implemented.
+  version: "0.2.0"
 servers:
   - url: "/projects/{projectId}/control-plane/apis/{telemetryGroup}/v1"
     description: >-
@@ -24,24 +51,28 @@ security:
   - bearerAuth: []
 
 paths:
-  /logs:
+  /loki/api/v1/query:
     get:
-      operationId: queryLogs
-      summary: Buffered log query over a time window
+      operationId: lokiQuery
+      summary: Instant log query (mimics Loki's /loki/api/v1/query)
       tags: [logs]
       parameters:
         - $ref: "#/components/parameters/LogQLQuery"
-        - $ref: "#/components/parameters/Since"
-        - $ref: "#/components/parameters/Until"
         - $ref: "#/components/parameters/Limit"
-        - $ref: "#/components/parameters/Cursor"
+        - name: time
+          in: query
+          description: Evaluation instant. Defaults to now.
+          schema:
+            type: string
+            format: date-time
+        - $ref: "#/components/parameters/Direction"
       responses:
         "200":
-          description: Matching log lines, most recent first.
+          description: Matching log lines, as Loki-shaped streams.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LogsResponse"
+                $ref: "#/components/schemas/LokiQueryResponse"
         "400":
           $ref: "#/components/responses/BadQuery"
         "401":
@@ -49,27 +80,139 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /logs/tail:
+  /loki/api/v1/query_range:
     get:
-      operationId: tailLogs
-      summary: Streaming log query (datumctl logs --tail)
-      description: >-
-        Chunked HTTP response; the connection stays open and new matching log
-        lines are flushed as they are ingested. Delivery is at-least-once —
-        duplicate lines are possible at cursor boundaries, matching the
-        `kubectl logs --follow` contract. Each chunk is one JSON-encoded
-        LogEntry object, newline-delimited.
+      operationId: lokiQueryRange
+      summary: Range log query (mimics Loki's /loki/api/v1/query_range)
       tags: [logs]
       parameters:
         - $ref: "#/components/parameters/LogQLQuery"
-        - $ref: "#/components/parameters/Since"
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Direction"
       responses:
         "200":
-          description: Newline-delimited stream of LogEntry objects.
+          description: Matching log lines over [start,end], as Loki-shaped streams.
           content:
-            application/x-ndjson:
+            application/json:
               schema:
-                $ref: "#/components/schemas/LogEntry"
+                $ref: "#/components/schemas/LokiQueryResponse"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /loki/api/v1/label:
+    get:
+      operationId: lokiLabelNames
+      summary: List label names in use (mimics Loki's /loki/api/v1/label)
+      description: >-
+        Returns `service_name` and `severity` (the fixed schema columns)
+        unioned with the distinct keys currently present in `LogAttributes`/
+        `ResourceAttributes`, scoped to the caller's project_id — a project
+        never sees a label name that only exists in another project's data.
+      tags: [discovery]
+      parameters:
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+      responses:
+        "200":
+          description: Label names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LokiStringListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /loki/api/v1/label/{name}/values:
+    get:
+      operationId: lokiLabelValues
+      summary: >-
+        List distinct values for one label (mimics Loki's
+        /loki/api/v1/label/{name}/values)
+      description: >-
+        `name=service_name` and `name=severity` read the corresponding fixed
+        column; any other name reads `LogAttributes[name]`/
+        `ResourceAttributes[name]`. Scoped to the caller's project_id, same as
+        every other endpoint here.
+      tags: [discovery]
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          example: severity
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+        - name: query
+          in: query
+          description: >-
+            Optional LogQL label-matcher subset (no line filters) to further
+            scope which streams' values are considered, e.g.
+            `{service_name="foo"}`.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Distinct values for the named label.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LokiStringListResponse"
+        "400":
+          $ref: "#/components/responses/BadQuery"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        default:
+          $ref: "#/components/responses/UnexpectedError"
+
+  /loki/api/v1/series:
+    get:
+      operationId: lokiSeries
+      summary: >-
+        List distinct label-sets / streams matching selectors (mimics Loki's
+        /loki/api/v1/series)
+      description: >-
+        Returned label-sets are bounded to the fixed schema columns
+        (`service_name`, `severity`) plus a small, explicitly allowlisted set
+        of common attribute keys — **not** every key present in
+        `LogAttributes`/`ResourceAttributes`. Including every dynamic
+        attribute key in the combination would make the distinct-combination
+        count unbounded (a cross product over arbitrary per-record JSON
+        keys), which doesn't scale as a discovery query. The allowlist itself
+        is an implementation detail to be defined when this endpoint is
+        built (tracked in the client-wiring issue), not part of this spec.
+      tags: [discovery]
+      parameters:
+        - name: match[]
+          in: query
+          required: true
+          description: >-
+            One or more LogQL label-matcher subset selectors (no line
+            filters), e.g. `{service_name="foo"}`. At least one is required,
+            matching Loki's own /series contract.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
+      responses:
+        "200":
+          description: Distinct label-sets matching the given selectors.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LokiSeriesResponse"
         "400":
           $ref: "#/components/responses/BadQuery"
         "401":
@@ -111,18 +254,8 @@ paths:
       tags: [metrics]
       parameters:
         - $ref: "#/components/parameters/PromQLQuery"
-        - name: start
-          in: query
-          required: true
-          schema:
-            type: string
-            format: date-time
-        - name: end
-          in: query
-          required: true
-          schema:
-            type: string
-            format: date-time
+        - $ref: "#/components/parameters/Start"
+        - $ref: "#/components/parameters/End"
         - name: step
           in: query
           required: true
@@ -178,17 +311,17 @@ components:
         type: string
       example: 'cpu_usage{service="compute-workload"}'
 
-    Since:
-      name: since
+    Start:
+      name: start
       in: query
       description: >-
-        Relative ("1h", "30m") or absolute timestamp. Filters ObservedTimestamp.
-        Defaults to 1h before now.
+        Relative ("1h", "30m") or absolute timestamp lower bound. Filters
+        ObservedTimestamp. Defaults to 1h before now.
       schema:
         type: string
 
-    Until:
-      name: until
+    End:
+      name: end
       in: query
       description: Relative or absolute timestamp upper bound. Defaults to now.
       schema:
@@ -203,12 +336,16 @@ components:
         maximum: 1000
         minimum: 1
 
-    Cursor:
-      name: cursor
+    Direction:
+      name: direction
       in: query
-      description: Opaque pagination cursor from a previous response's nextCursor.
+      description: >-
+        Sort order. Only "backward" (most recent first) is supported today;
+        "forward" is rejected with 400.
       schema:
         type: string
+        enum: [backward, forward]
+        default: backward
 
   responses:
     BadQuery:
@@ -218,61 +355,110 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/Error"
+            $ref: "#/components/schemas/LokiErrorResponse"
     Unauthorized:
       description: Missing or invalid bearer token.
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/Error"
+            $ref: "#/components/schemas/LokiErrorResponse"
     UnexpectedError:
       description: >-
         Any error status not explicitly listed above, including 501 Not
         Implemented — every handler in the current scaffold is a stub and
-        returns this until the ClickHouse-backed implementation lands.
+        returns this until the ClickHouse/JetStream-backed implementation
+        lands.
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/Error"
+            $ref: "#/components/schemas/LokiErrorResponse"
 
   schemas:
-    Error:
+    LokiErrorResponse:
       type: object
-      required: [message]
+      required: [status, error]
       properties:
-        message:
+        status:
+          type: string
+          enum: [error]
+        errorType:
+          type: string
+          example: bad_data
+        error:
           type: string
 
-    LogEntry:
+    LokiStream:
       type: object
-      required: [timestamp, service, severity, body]
+      required: [stream, values]
       properties:
-        timestamp:
-          type: string
-          format: date-time
-          description: ObservedTimestamp — set by the OTel Collector on receipt.
-        service:
-          type: string
-        severity:
-          type: string
-          example: ERROR
-        body:
-          type: string
-        labels:
+        stream:
           type: object
           additionalProperties:
             type: string
+          description: >-
+            The label set for this stream: `service_name`, `severity`, and
+            any dynamic attribute keys the query touched.
+        values:
+          type: array
+          description: >-
+            [nanosecondTimestamp, logLine] pairs, both strings, matching
+            Loki's own /query and /query_range value encoding.
+          items:
+            type: array
+            items:
+              type: string
+            minItems: 2
+            maxItems: 2
 
-    LogsResponse:
+    LokiQueryResponse:
       type: object
-      required: [results]
+      required: [status, data]
       properties:
-        results:
+        status:
+          type: string
+          enum: [success]
+        data:
+          type: object
+          required: [resultType, result]
+          properties:
+            resultType:
+              type: string
+              enum: [streams]
+              description: >-
+                Always "streams" for the LogQL subset this service accepts.
+                Loki's "vector"/"matrix" result types apply to metric-style
+                log queries (count_over_time, rate, ...), which are rejected
+                at parse time — see the LogQLQuery parameter description.
+            result:
+              type: array
+              items:
+                $ref: "#/components/schemas/LokiStream"
+
+    LokiStringListResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
+          type: string
+          enum: [success]
+        data:
           type: array
           items:
-            $ref: "#/components/schemas/LogEntry"
-        nextCursor:
+            type: string
+
+    LokiSeriesResponse:
+      type: object
+      required: [status, data]
+      properties:
+        status:
           type: string
+          enum: [success]
+        data:
+          type: array
+          items:
+            type: object
+            additionalProperties:
+              type: string
 
     MetricSample:
       type: object
