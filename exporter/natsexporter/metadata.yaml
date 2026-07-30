@@ -1,0 +1,9 @@
+type: nats
+
+status:
+  class: exporter
+  stability:
+    development: [logs, metrics, traces]
+  distributions: []
+  codeowners:
+    active: [mcostello]
