@@ -12,8 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        module:
-          - operator
+        include:
+          - module: operator
+            test-cmd: make test
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -27,4 +28,4 @@ jobs:
         working-directory: ${{ matrix.module }}
         run: |
           go mod tidy
-          go test ./...
+          ${{ matrix.test-cmd }}
