@@ -1,0 +1,9 @@
+type: nats
+
+status:
+  class: receiver
+  stability:
+    development: [logs]
+  distributions: []
+  codeowners:
+    active: [mcostello]
