@@ -1,0 +1,41 @@
+# OCB (go.opentelemetry.io/collector/cmd/builder) manifest for the custom
+# collector distribution used by gateway-collector and node-agent-collector
+# (config/edge-collectors/). Includes every component those two collector
+# configs reference, plus unbatch/nats for exporting to NATS directly --
+# there is no separate bridge collector.
+dist:
+  module: go.datum.net/o11y/otelcol
+  name: telemetry-otelcol
+  description: Datum telemetry edge collector distribution (contrib + unbatch/nats)
+  version: 0.1.0
+  output_path: ./_build
+
+extensions:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/observer/k8sobserver v0.157.0
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/filelogreceiver v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/receiver/receivercreator v0.157.0
+  - gomod: go.datum.net/o11y/receiver/natsreceiver v0.1.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.157.0
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/groupbyattrsprocessor v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/k8sattributesprocessor v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/resourceprocessor v0.157.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/processor/transformprocessor v0.157.0
+  - gomod: go.datum.net/o11y/processor/unbatchprocessor v0.1.0
+
+exporters:
+  - gomod: go.opentelemetry.io/collector/exporter/debugexporter v0.157.0
+  - gomod: go.datum.net/o11y/exporter/natsexporter v0.1.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/clickhouseexporter v0.157.0
+
+replaces:
+  # Paths are relative to output_path (./_build), where OCB writes go.mod.
+  - go.datum.net/o11y/processor/unbatchprocessor => ../../processor/unbatchprocessor
+  - go.datum.net/o11y/exporter/natsexporter => ../../exporter/natsexporter
+  - go.datum.net/o11y/receiver/natsreceiver => ../../receiver/natsreceiver
