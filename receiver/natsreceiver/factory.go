@@ -6,15 +6,15 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/receiver"
-)
 
-var componentType = component.MustNewType("nats")
+	"go.datum.net/o11y/receiver/natsreceiver/internal/metadata"
+)
 
 func NewFactory() receiver.Factory {
 	return receiver.NewFactory(
-		componentType,
+		metadata.Type,
 		createDefaultConfig,
-		receiver.WithLogs(createLogsReceiver, component.StabilityLevelDevelopment),
+		receiver.WithLogs(createLogsReceiver, metadata.LogsStability),
 	)
 }
 
