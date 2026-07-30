@@ -25,7 +25,7 @@ import (
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 
-	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	telemetryv1alpha1 "go.datum.net/o11y/operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
 

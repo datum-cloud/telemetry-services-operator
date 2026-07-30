@@ -26,7 +26,7 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 	mcreconcile "sigs.k8s.io/multicluster-runtime/pkg/reconcile"
 
-	"go.datum.net/telemetry-services-operator/api/v1alpha1"
+	"go.datum.net/o11y/operator/api/v1alpha1"
 )
 
 const (

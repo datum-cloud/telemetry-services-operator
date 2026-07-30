@@ -13,8 +13,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
-	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
-	"go.datum.net/telemetry-services-operator/internal/validation"
+	telemetryv1alpha1 "go.datum.net/o11y/operator/api/v1alpha1"
+	"go.datum.net/o11y/operator/internal/validation"
 )
 
 // nolint:unused

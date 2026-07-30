@@ -24,7 +24,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"go.datum.net/telemetry-services-operator/test/utils"
+	"go.datum.net/o11y/operator/test/utils"
 )
 
 var (

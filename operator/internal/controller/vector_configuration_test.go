@@ -10,7 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
-	"go.datum.net/telemetry-services-operator/api/v1alpha1"
+	"go.datum.net/o11y/operator/api/v1alpha1"
 )
 
 func TestCreateVectorConfiguration(t *testing.T) {
