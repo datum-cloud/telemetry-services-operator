@@ -1,1 +1,1 @@
-DROP TABLE IF EXISTS telemetry.logs;
+DROP TABLE IF EXISTS o11y.logs;

@@ -1,6 +1,6 @@
-CREATE DATABASE IF NOT EXISTS telemetry;
+CREATE DATABASE IF NOT EXISTS o11y;
 
-CREATE TABLE IF NOT EXISTS telemetry.logs
+CREATE TABLE IF NOT EXISTS o11y.logs
 (
     Timestamp DateTime64(9),
     TraceId String,

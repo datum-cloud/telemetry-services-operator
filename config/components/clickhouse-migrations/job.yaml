@@ -29,7 +29,7 @@ spec:
             - name: CLICKHOUSE_USER
               value: "clickhouse-migrations-client"
             - name: CLICKHOUSE_DATABASE
-              value: "telemetry"
+              value: "o11y"
             - name: MIGRATIONS_DIR
               value: "/migrations"
           volumeMounts:

@@ -27,7 +27,7 @@ func TestConfigFromEnv_MissingRequired(t *testing.T) {
 func TestConfigFromEnv_Defaults(t *testing.T) {
 	t.Setenv("CLICKHOUSE_HOST", "clickhouse.example")
 	t.Setenv("CLICKHOUSE_USER", "clickhouse-migrations-client")
-	t.Setenv("CLICKHOUSE_DATABASE", "telemetry")
+	t.Setenv("CLICKHOUSE_DATABASE", "o11y")
 
 	cfg, err := configFromEnv()
 	require.NoError(t, err)
