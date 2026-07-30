@@ -15,6 +15,10 @@ func TestConfig_Validate(t *testing.T) {
 		{"consumer_name without stream", func(c *Config) { c.Stream = "" }, true},
 		{"bad logs encoding", func(c *Config) { c.Logs.Encoding = "bogus" }, true},
 		{"missing logs subject", func(c *Config) { c.Logs.Subject = "" }, true},
+		{"bad metrics encoding", func(c *Config) { c.Metrics.Encoding = "bogus" }, true},
+		{"missing metrics subject", func(c *Config) { c.Metrics.Subject = "" }, true},
+		{"bad traces encoding", func(c *Config) { c.Traces.Encoding = "bogus" }, true},
+		{"missing traces subject", func(c *Config) { c.Traces.Subject = "" }, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -23,6 +27,8 @@ func TestConfig_Validate(t *testing.T) {
 				Stream:       "otlp",
 				ConsumerName: "test-consumer",
 				Logs:         SignalConfig{Subject: "otlp.logs", Encoding: "otlp_proto"},
+				Metrics:      SignalConfig{Subject: "otlp.metrics", Encoding: "otlp_proto"},
+				Traces:       SignalConfig{Subject: "otlp.traces", Encoding: "otlp_proto"},
 			}
 			tt.mutate(cfg)
 			err := cfg.Validate()
