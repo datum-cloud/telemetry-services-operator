@@ -1,0 +1,22 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build every module that has its own build task
+    cmds:
+      - task: operator:build
+      - task: clickhouse-migrate:build
+
+  test:
+    desc: Test every module that has its own test task
+    cmds:
+      - task: operator:test
+      - task: clickhouse-migrate:test
+
+includes:
+  operator:
+    taskfile: ./operator
+    dir: ./operator
+  clickhouse-migrate:
+    taskfile: ./clickhouse-migrate
+    dir: ./clickhouse-migrate

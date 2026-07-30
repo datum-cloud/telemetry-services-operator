@@ -1,0 +1,256 @@
+version: '3'
+
+vars:
+  TOOL_DIR: "{{.USER_WORKING_DIR}}/bin"
+  IMAGE_NAME: "controller"
+  IMAGE_TAG: "latest"
+  CONTAINER_TOOL: "docker"
+  KUBECTL: "kubectl"
+  IGNORE_NOT_FOUND: "false"
+  PLATFORMS: "linux/arm64,linux/amd64,linux/s390x,linux/ppc64le"
+  KUSTOMIZE_VERSION: "v5.5.0"
+  CONTROLLER_TOOLS_VERSION: "v0.17.2"
+  GOLANGCI_LINT_VERSION: "v1.63.4"
+  CRDOC_VERSION: "v0.6.4"
+  # Mirrors the Makefile's dynamic derivation from the controller-runtime/k8s.io/api
+  # module versions in go.mod, rather than a hardcoded string.
+  ENVTEST_VERSION:
+    sh: go list -m -f '{{"{{"}}.Version{{"}}"}}' sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $2, $3}'
+  ENVTEST_K8S_VERSION:
+    sh: go list -m -f '{{"{{"}}.Version{{"}}"}}' k8s.io/api | awk -F'[v.]' '{printf "1.%d", $3}'
+
+tasks:
+  default:
+    desc: List all available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  install-tools:
+    desc: Install kustomize, controller-gen, setup-envtest, golangci-lint, and crdoc into TOOL_DIR
+    silent: true
+    cmds:
+      - |
+        set -e
+        mkdir -p {{.TOOL_DIR}}
+
+        # kustomize
+        if [ ! -f "{{.TOOL_DIR}}/kustomize-{{.KUSTOMIZE_VERSION}}" ]; then
+          echo "Installing kustomize {{.KUSTOMIZE_VERSION}}..."
+          GOBIN={{.TOOL_DIR}} go install sigs.k8s.io/kustomize/kustomize/v5@{{.KUSTOMIZE_VERSION}}
+          mv {{.TOOL_DIR}}/kustomize {{.TOOL_DIR}}/kustomize-{{.KUSTOMIZE_VERSION}}
+        fi
+        ln -sf {{.TOOL_DIR}}/kustomize-{{.KUSTOMIZE_VERSION}} {{.TOOL_DIR}}/kustomize
+
+        # controller-gen
+        if [ ! -f "{{.TOOL_DIR}}/controller-gen-{{.CONTROLLER_TOOLS_VERSION}}" ]; then
+          echo "Installing controller-gen {{.CONTROLLER_TOOLS_VERSION}}..."
+          GOBIN={{.TOOL_DIR}} go install sigs.k8s.io/controller-tools/cmd/controller-gen@{{.CONTROLLER_TOOLS_VERSION}}
+          mv {{.TOOL_DIR}}/controller-gen {{.TOOL_DIR}}/controller-gen-{{.CONTROLLER_TOOLS_VERSION}}
+        fi
+        ln -sf {{.TOOL_DIR}}/controller-gen-{{.CONTROLLER_TOOLS_VERSION}} {{.TOOL_DIR}}/controller-gen
+
+        # setup-envtest
+        if [ ! -f "{{.TOOL_DIR}}/setup-envtest-{{.ENVTEST_VERSION}}" ]; then
+          echo "Installing setup-envtest {{.ENVTEST_VERSION}}..."
+          GOBIN={{.TOOL_DIR}} go install sigs.k8s.io/controller-runtime/tools/setup-envtest@{{.ENVTEST_VERSION}}
+          mv {{.TOOL_DIR}}/setup-envtest {{.TOOL_DIR}}/setup-envtest-{{.ENVTEST_VERSION}}
+        fi
+        ln -sf {{.TOOL_DIR}}/setup-envtest-{{.ENVTEST_VERSION}} {{.TOOL_DIR}}/setup-envtest
+
+        # golangci-lint
+        if [ ! -f "{{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}" ]; then
+          echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}}..."
+          GOBIN={{.TOOL_DIR}} go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+          mv {{.TOOL_DIR}}/golangci-lint {{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}
+        fi
+        ln -sf {{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}} {{.TOOL_DIR}}/golangci-lint
+
+        # crdoc
+        if [ ! -f "{{.TOOL_DIR}}/crdoc-{{.CRDOC_VERSION}}" ]; then
+          echo "Installing crdoc {{.CRDOC_VERSION}}..."
+          GOBIN={{.TOOL_DIR}} go install fybrik.io/crdoc@{{.CRDOC_VERSION}}
+          mv {{.TOOL_DIR}}/crdoc {{.TOOL_DIR}}/crdoc-{{.CRDOC_VERSION}}
+        fi
+        ln -sf {{.TOOL_DIR}}/crdoc-{{.CRDOC_VERSION}} {{.TOOL_DIR}}/crdoc
+    status:
+      - test -f {{.TOOL_DIR}}/kustomize-{{.KUSTOMIZE_VERSION}}
+      - test -f {{.TOOL_DIR}}/controller-gen-{{.CONTROLLER_TOOLS_VERSION}}
+      - test -f {{.TOOL_DIR}}/setup-envtest-{{.ENVTEST_VERSION}}
+      - test -f {{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}
+      - test -f {{.TOOL_DIR}}/crdoc-{{.CRDOC_VERSION}}
+
+  manifests:
+    desc: Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
+    deps: [install-tools]
+    cmds:
+      - '{{.TOOL_DIR}}/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases'
+
+  generate:
+    desc: Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
+    deps: [install-tools]
+    cmds:
+      - '{{.TOOL_DIR}}/controller-gen object:headerFile="hack/boilerplate.go.txt" paths="./..."'
+
+  fmt:
+    desc: Run go fmt against code
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet against code
+    cmds:
+      - go vet ./...
+
+  setup-envtest:
+    desc: Download the binaries required for envtest in TOOL_DIR
+    deps: [install-tools]
+    cmds:
+      - |
+        set -e
+        echo "Setting up envtest binaries for Kubernetes version {{.ENVTEST_K8S_VERSION}}..."
+        {{.TOOL_DIR}}/setup-envtest use {{.ENVTEST_K8S_VERSION}} --bin-dir {{.TOOL_DIR}} -p path
+
+  test:
+    desc: Run tests
+    cmds:
+      - task: manifests
+      - task: generate
+      - task: fmt
+      - task: vet
+      - task: setup-envtest
+      - |
+        set -e
+        KUBEBUILDER_ASSETS="$({{.TOOL_DIR}}/setup-envtest use {{.ENVTEST_K8S_VERSION}} --bin-dir {{.TOOL_DIR}} -p path)" go test $(go list ./... | grep -v /e2e) -coverprofile cover.out
+
+  test-e2e:
+    desc: Run the e2e tests. Expects an isolated environment using Kind
+    cmds:
+      - task: manifests
+      - task: generate
+      - task: fmt
+      - task: vet
+      - |
+        set -e
+        command -v kind >/dev/null 2>&1 || { echo "Kind is not installed. Please install Kind manually."; exit 1; }
+        kind get clusters | grep -q 'kind' || { echo "No Kind cluster is running. Please start a Kind cluster before running the e2e tests."; exit 1; }
+        go test ./test/e2e/ -v -ginkgo.v
+
+  lint:
+    desc: Run golangci-lint linter
+    deps: [install-tools]
+    cmds:
+      - "{{.TOOL_DIR}}/golangci-lint run"
+
+  lint-fix:
+    desc: Run golangci-lint linter and perform fixes
+    deps: [install-tools]
+    cmds:
+      - "{{.TOOL_DIR}}/golangci-lint run --fix"
+
+  lint-config:
+    desc: Verify golangci-lint linter configuration
+    deps: [install-tools]
+    cmds:
+      - "{{.TOOL_DIR}}/golangci-lint config verify"
+
+  build:
+    desc: Build manager binary
+    cmds:
+      - task: manifests
+      - task: generate
+      - task: fmt
+      - task: vet
+      - go build -o bin/manager cmd/main.go
+
+  run:
+    desc: Run a controller from your host
+    cmds:
+      - task: manifests
+      - task: generate
+      - task: fmt
+      - task: vet
+      - TMPDIR={{.TOOL_DIR}}/tmp go run ./cmd/main.go
+
+  docker-build:
+    desc: Build docker image with the manager
+    cmds:
+      - "{{.CONTAINER_TOOL}} build -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} ."
+
+  docker-push:
+    desc: Push docker image with the manager
+    cmds:
+      - "{{.CONTAINER_TOOL}} push {{.IMAGE_NAME}}:{{.IMAGE_TAG}}"
+
+  docker-buildx:
+    desc: Build and push docker image for the manager for cross-platform support
+    cmds:
+      - |
+        set -e
+        # copy existing Dockerfile and insert --platform=${BUILDPLATFORM} into Dockerfile.cross, and preserve the original Dockerfile
+        sed -e '1 s/\(^FROM\)/FROM --platform=\$\{BUILDPLATFORM\}/; t' -e ' 1,// s//FROM --platform=\$\{BUILDPLATFORM\}/' Dockerfile > Dockerfile.cross
+        {{.CONTAINER_TOOL}} buildx create --name telemetry-services-operator-builder || true
+        {{.CONTAINER_TOOL}} buildx use telemetry-services-operator-builder
+        {{.CONTAINER_TOOL}} buildx build --push --platform={{.PLATFORMS}} --tag {{.IMAGE_NAME}}:{{.IMAGE_TAG}} -f Dockerfile.cross . || true
+        {{.CONTAINER_TOOL}} buildx rm telemetry-services-operator-builder || true
+        rm Dockerfile.cross
+
+  build-installer:
+    desc: Generate a consolidated YAML with CRDs and deployment
+    deps: [install-tools]
+    cmds:
+      - task: manifests
+      - task: generate
+      - |
+        set -e
+        mkdir -p dist
+        (cd config/manager && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
+        {{.TOOL_DIR}}/kustomize build config/default > dist/install.yaml
+
+  install:
+    desc: Install CRDs into the K8s cluster specified in ~/.kube/config
+    deps: [install-tools]
+    cmds:
+      - task: manifests
+      - "{{.TOOL_DIR}}/kustomize build config/dev | {{.KUBECTL}} apply -f -"
+
+  uninstall:
+    desc: 'Uninstall CRDs from the K8s cluster specified in ~/.kube/config. Set IGNORE_NOT_FOUND=true to ignore resource not found errors during deletion'
+    deps: [install-tools]
+    cmds:
+      - task: manifests
+      - "{{.TOOL_DIR}}/kustomize build config/crd | {{.KUBECTL}} delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -"
+
+  deploy:
+    desc: Deploy controller to the K8s cluster specified in ~/.kube/config
+    deps: [install-tools]
+    cmds:
+      - task: manifests
+      - |
+        set -e
+        (cd config/manager && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
+        {{.TOOL_DIR}}/kustomize build config/default | {{.KUBECTL}} apply -f -
+
+  undeploy:
+    desc: 'Undeploy controller from the K8s cluster specified in ~/.kube/config. Set IGNORE_NOT_FOUND=true to ignore resource not found errors during deletion'
+    deps: [install-tools]
+    cmds:
+      - "{{.TOOL_DIR}}/kustomize build config/default | {{.KUBECTL}} delete --ignore-not-found={{.IGNORE_NOT_FOUND}} -f -"
+
+  api-docs:
+    desc: Generate CRD API reference docs
+    deps: [install-tools]
+    cmds:
+      - |
+        set -e
+        TMP_MANIFEST_DIR=$(mktemp -d)
+        cp -r config/crd/* "$TMP_MANIFEST_DIR"
+        {{.TOOL_DIR}}/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=config/crd/bases
+        TMP_DIR=$(mktemp -d)
+        {{.TOOL_DIR}}/kustomize build "$TMP_MANIFEST_DIR" -o "$TMP_DIR"
+        mkdir -p docs/api
+        for crdmanifest in "$TMP_DIR"/*; do
+          filename="$(basename -s .telemetry.miloapis.com.yaml "$crdmanifest")"
+          filename="${filename#apiextensions.k8s.io_v1_customresourcedefinition_}"
+          {{.TOOL_DIR}}/crdoc --resources "$crdmanifest" --output "docs/api/$filename.md"
+        done
