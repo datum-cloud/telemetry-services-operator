@@ -13,6 +13,8 @@ import (
 	"go.opentelemetry.io/collector/component"
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/receiver"
 	"go.opentelemetry.io/otel/metric"
 	"go.uber.org/zap"
@@ -38,11 +40,16 @@ func (e *errUnmarshal) Error() string { return e.err.Error() }
 func (e *errUnmarshal) Unwrap() error { return e.err }
 
 type natsReceiver struct {
-	cfg  *Config
-	set  receiver.Settings
-	next consumer.Logs
+	cfg    *Config
+	set    receiver.Settings
+	signal SignalConfig
 
-	logsUnmarshaler plog.Unmarshaler
+	// deliverPayload unmarshals payload into the signal-specific pdata type
+	// and forwards it to whichever consumer.{Logs,Metrics,Traces} this
+	// instance was constructed for. Wraps an unmarshal failure in
+	// &errUnmarshal{} so handleJetStream can distinguish it (non-retryable)
+	// from a downstream forwarding failure (retryable).
+	deliverPayload func(ctx context.Context, payload []byte) error
 
 	conn        *nats.Conn
 	consumeCtx  jetstream.ConsumeContext
@@ -57,12 +64,61 @@ type natsReceiver struct {
 	resubscribeCount  metric.Int64Counter
 }
 
-func newReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*natsReceiver, error) {
+func newLogsReceiver(cfg *Config, set receiver.Settings, next consumer.Logs) (*natsReceiver, error) {
 	unmarshaler, err := newLogsUnmarshaler(cfg.Logs.Encoding)
 	if err != nil {
 		return nil, err
 	}
-	return &natsReceiver{cfg: cfg, set: set, next: next, logsUnmarshaler: unmarshaler}, nil
+	return &natsReceiver{
+		cfg:    cfg,
+		set:    set,
+		signal: cfg.Logs,
+		deliverPayload: func(ctx context.Context, payload []byte) error {
+			logs, err := unmarshaler.UnmarshalLogs(payload)
+			if err != nil {
+				return &errUnmarshal{err: err}
+			}
+			return next.ConsumeLogs(ctx, logs)
+		},
+	}, nil
+}
+
+func newMetricsReceiver(cfg *Config, set receiver.Settings, next consumer.Metrics) (*natsReceiver, error) {
+	unmarshaler, err := newMetricsUnmarshaler(cfg.Metrics.Encoding)
+	if err != nil {
+		return nil, err
+	}
+	return &natsReceiver{
+		cfg:    cfg,
+		set:    set,
+		signal: cfg.Metrics,
+		deliverPayload: func(ctx context.Context, payload []byte) error {
+			metrics, err := unmarshaler.UnmarshalMetrics(payload)
+			if err != nil {
+				return &errUnmarshal{err: err}
+			}
+			return next.ConsumeMetrics(ctx, metrics)
+		},
+	}, nil
+}
+
+func newTracesReceiver(cfg *Config, set receiver.Settings, next consumer.Traces) (*natsReceiver, error) {
+	unmarshaler, err := newTracesUnmarshaler(cfg.Traces.Encoding)
+	if err != nil {
+		return nil, err
+	}
+	return &natsReceiver{
+		cfg:    cfg,
+		set:    set,
+		signal: cfg.Traces,
+		deliverPayload: func(ctx context.Context, payload []byte) error {
+			traces, err := unmarshaler.UnmarshalTraces(payload)
+			if err != nil {
+				return &errUnmarshal{err: err}
+			}
+			return next.ConsumeTraces(ctx, traces)
+		},
+	}, nil
 }
 
 func newLogsUnmarshaler(encoding string) (plog.Unmarshaler, error) {
@@ -73,6 +129,28 @@ func newLogsUnmarshaler(encoding string) (plog.Unmarshaler, error) {
 		return &plog.JSONUnmarshaler{}, nil
 	default:
 		return nil, fmt.Errorf("unsupported logs encoding %q", encoding)
+	}
+}
+
+func newMetricsUnmarshaler(encoding string) (pmetric.Unmarshaler, error) {
+	switch encoding {
+	case encodingOTLPProto:
+		return &pmetric.ProtoUnmarshaler{}, nil
+	case encodingOTLPJSON:
+		return &pmetric.JSONUnmarshaler{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported metrics encoding %q", encoding)
+	}
+}
+
+func newTracesUnmarshaler(encoding string) (ptrace.Unmarshaler, error) {
+	switch encoding {
+	case encodingOTLPProto:
+		return &ptrace.ProtoUnmarshaler{}, nil
+	case encodingOTLPJSON:
+		return &ptrace.JSONUnmarshaler{}, nil
+	default:
+		return nil, fmt.Errorf("unsupported traces encoding %q", encoding)
 	}
 }
 
@@ -132,10 +210,10 @@ func (r *natsReceiver) Start(ctx context.Context, _ component.Host) error {
 }
 
 func (r *natsReceiver) startCoreNATS(conn *nats.Conn) error {
-	sub, err := conn.Subscribe(r.cfg.Logs.Subject, r.handleCoreNATS)
+	sub, err := conn.Subscribe(r.signal.Subject, r.handleCoreNATS)
 	if err != nil {
 		conn.Close()
-		return fmt.Errorf("subscribing to %q: %w", r.cfg.Logs.Subject, err)
+		return fmt.Errorf("subscribing to %q: %w", r.signal.Subject, err)
 	}
 	r.coreNATSSub = sub
 	return nil
@@ -156,7 +234,8 @@ func (r *natsReceiver) startJetStream(ctx context.Context, conn *nats.Conn) erro
 		// Consume's own heartbeat/re-pull logic has already recovered by
 		// the time this fires -- it's a signal something happened (e.g. a
 		// consumer leader election), not that delivery is currently
-		// broken. Record it on the counter Task 5's alert reads.
+		// broken. Record it on resubscribeCount so an alert on this metric
+		// can be built if resubscribes become frequent enough to matter.
 		r.set.Logger.Warn("nats jetstream consume error, resubscribing", zap.Error(err))
 		r.resubscribeCount.Add(ctx, 1)
 	}))
@@ -208,13 +287,14 @@ func (r *natsReceiver) handleJetStream(msg jetstream.Msg) {
 }
 
 func (r *natsReceiver) deliver(ctx context.Context, payload []byte) error {
-	logs, err := r.logsUnmarshaler.UnmarshalLogs(payload)
+	err := r.deliverPayload(ctx, payload)
 	if err != nil {
-		r.set.Logger.Error("unmarshaling nats payload", zap.Error(err))
-		return &errUnmarshal{err: err}
-	}
-	if err := r.next.ConsumeLogs(ctx, logs); err != nil {
-		r.set.Logger.Error("forwarding logs to next consumer", zap.Error(err))
+		var unmarshalErr *errUnmarshal
+		if errors.As(err, &unmarshalErr) {
+			r.set.Logger.Error("unmarshaling nats payload", zap.Error(err))
+		} else {
+			r.set.Logger.Error("forwarding logs to next consumer", zap.Error(err))
+		}
 		return err
 	}
 	r.lastDelivery.Store(time.Now().UnixNano())

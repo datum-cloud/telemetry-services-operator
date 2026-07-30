@@ -16,6 +16,8 @@ import (
 	"go.opentelemetry.io/collector/consumer"
 	"go.opentelemetry.io/collector/consumer/consumertest"
 	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/pmetric"
+	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/receiver/receivertest"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
@@ -96,7 +98,7 @@ func TestReceiver_JetStreamMode_DeliversLogs(t *testing.T) {
 	cfg.TLS.Insecure = true
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopSettings(receivertest.NopType)
-	rcv, err := newReceiver(cfg, set, sink)
+	rcv, err := newLogsReceiver(cfg, set, sink)
 	require.NoError(t, err)
 	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
@@ -129,7 +131,7 @@ func TestReceiver_CoreNATSMode_DeliversLogs(t *testing.T) {
 	cfg.TLS.Insecure = true
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopSettings(receivertest.NopType)
-	rcv, err := newReceiver(cfg, set, sink)
+	rcv, err := newLogsReceiver(cfg, set, sink)
 	require.NoError(t, err)
 	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
@@ -147,6 +149,146 @@ func TestReceiver_CoreNATSMode_DeliversLogs(t *testing.T) {
 
 	require.Eventually(t, func() bool {
 		return sink.LogRecordCount() == 1
+	}, 5*time.Second, 50*time.Millisecond)
+}
+
+func TestReceiver_JetStreamMode_DeliversMetrics(t *testing.T) {
+	srv := startTestServer(t)
+	createTestStream(t, srv, "otlp", "otlp.>")
+	createTestConsumer(t, srv, "otlp", "test-consumer", "otlp.metrics")
+
+	cfg := &Config{
+		URL:          srv.ClientURL(),
+		Stream:       "otlp",
+		ConsumerName: "test-consumer",
+		Metrics:      SignalConfig{Subject: "otlp.metrics", Encoding: "otlp_proto"},
+	}
+	cfg.TLS.Insecure = true
+	sink := new(consumertest.MetricsSink)
+	set := receivertest.NewNopSettings(receivertest.NopType)
+	rcv, err := newMetricsReceiver(cfg, set, sink)
+	require.NoError(t, err)
+	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
+	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
+
+	nc, err := nats.Connect(srv.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(nc.Close)
+
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("cpu.usage")
+	m.SetEmptyGauge().DataPoints().AppendEmpty().SetDoubleValue(42)
+	payload, err := (&pmetric.ProtoMarshaler{}).MarshalMetrics(md)
+	require.NoError(t, err)
+	require.NoError(t, nc.Publish("otlp.metrics", payload))
+
+	require.Eventually(t, func() bool {
+		return sink.DataPointCount() == 1
+	}, 5*time.Second, 50*time.Millisecond)
+	assert := require.New(t)
+	assert.Equal("cpu.usage", sink.AllMetrics()[0].ResourceMetrics().At(0).ScopeMetrics().At(0).Metrics().At(0).Name())
+}
+
+func TestReceiver_JetStreamMode_DeliversTraces(t *testing.T) {
+	srv := startTestServer(t)
+	createTestStream(t, srv, "otlp", "otlp.>")
+	createTestConsumer(t, srv, "otlp", "test-consumer", "otlp.traces")
+
+	cfg := &Config{
+		URL:          srv.ClientURL(),
+		Stream:       "otlp",
+		ConsumerName: "test-consumer",
+		Traces:       SignalConfig{Subject: "otlp.traces", Encoding: "otlp_proto"},
+	}
+	cfg.TLS.Insecure = true
+	sink := new(consumertest.TracesSink)
+	set := receivertest.NewNopSettings(receivertest.NopType)
+	rcv, err := newTracesReceiver(cfg, set, sink)
+	require.NoError(t, err)
+	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
+	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
+
+	nc, err := nats.Connect(srv.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(nc.Close)
+
+	td := ptrace.NewTraces()
+	rs := td.ResourceSpans().AppendEmpty()
+	rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("test-span")
+	payload, err := (&ptrace.ProtoMarshaler{}).MarshalTraces(td)
+	require.NoError(t, err)
+	require.NoError(t, nc.Publish("otlp.traces", payload))
+
+	require.Eventually(t, func() bool {
+		return sink.SpanCount() == 1
+	}, 5*time.Second, 50*time.Millisecond)
+	assert := require.New(t)
+	assert.Equal("test-span", sink.AllTraces()[0].ResourceSpans().At(0).ScopeSpans().At(0).Spans().At(0).Name())
+}
+
+func TestReceiver_CoreNATSMode_DeliversMetrics(t *testing.T) {
+	srv := startTestServer(t)
+
+	cfg := &Config{
+		URL:     srv.ClientURL(),
+		Metrics: SignalConfig{Subject: "otlp.metrics", Encoding: "otlp_proto"},
+	}
+	cfg.TLS.Insecure = true
+	sink := new(consumertest.MetricsSink)
+	set := receivertest.NewNopSettings(receivertest.NopType)
+	rcv, err := newMetricsReceiver(cfg, set, sink)
+	require.NoError(t, err)
+	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
+	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
+
+	nc, err := nats.Connect(srv.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(nc.Close)
+
+	md := pmetric.NewMetrics()
+	rm := md.ResourceMetrics().AppendEmpty()
+	m := rm.ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	m.SetName("core-nats-metric")
+	m.SetEmptyGauge().DataPoints().AppendEmpty().SetDoubleValue(1)
+	payload, err := (&pmetric.ProtoMarshaler{}).MarshalMetrics(md)
+	require.NoError(t, err)
+	require.NoError(t, nc.Publish("otlp.metrics", payload))
+
+	require.Eventually(t, func() bool {
+		return sink.DataPointCount() == 1
+	}, 5*time.Second, 50*time.Millisecond)
+}
+
+func TestReceiver_CoreNATSMode_DeliversTraces(t *testing.T) {
+	srv := startTestServer(t)
+
+	cfg := &Config{
+		URL:    srv.ClientURL(),
+		Traces: SignalConfig{Subject: "otlp.traces", Encoding: "otlp_proto"},
+	}
+	cfg.TLS.Insecure = true
+	sink := new(consumertest.TracesSink)
+	set := receivertest.NewNopSettings(receivertest.NopType)
+	rcv, err := newTracesReceiver(cfg, set, sink)
+	require.NoError(t, err)
+	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
+	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
+
+	nc, err := nats.Connect(srv.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(nc.Close)
+
+	td := ptrace.NewTraces()
+	rs := td.ResourceSpans().AppendEmpty()
+	rs.ScopeSpans().AppendEmpty().Spans().AppendEmpty().SetName("core-nats-span")
+	payload, err := (&ptrace.ProtoMarshaler{}).MarshalTraces(td)
+	require.NoError(t, err)
+	require.NoError(t, nc.Publish("otlp.traces", payload))
+
+	require.Eventually(t, func() bool {
+		return sink.SpanCount() == 1
 	}, 5*time.Second, 50*time.Millisecond)
 }
 
@@ -178,7 +320,7 @@ func TestReceiver_JetStreamMode_NaksOnConsumeError(t *testing.T) {
 	require.NoError(t, err)
 
 	set := receivertest.NewNopSettings(receivertest.NopType)
-	rcv, err := newReceiver(cfg, set, failingConsumer)
+	rcv, err := newLogsReceiver(cfg, set, failingConsumer)
 	require.NoError(t, err)
 	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
@@ -238,7 +380,7 @@ func TestHandleJetStream_UnmarshalError_AcksNotNaks(t *testing.T) {
 	cfg := &Config{Logs: SignalConfig{Subject: "otlp.logs", Encoding: "otlp_proto"}}
 	set := receivertest.NewNopSettings(receivertest.NopType)
 	sink := new(consumertest.LogsSink)
-	rcv, err := newReceiver(cfg, set, sink)
+	rcv, err := newLogsReceiver(cfg, set, sink)
 	require.NoError(t, err)
 
 	msg := &fakeJSMsg{data: []byte("not a valid otlp proto payload")}
@@ -248,6 +390,25 @@ func TestHandleJetStream_UnmarshalError_AcksNotNaks(t *testing.T) {
 	require.False(t, msg.nakCalled)
 	require.Zero(t, msg.nakDelayCount)
 	require.Equal(t, 0, sink.LogRecordCount())
+}
+
+// TestHandleJetStream_UnmarshalError_AcksNotNaks_Metrics is the metrics
+// variant of TestHandleJetStream_UnmarshalError_AcksNotNaks, proving the
+// same non-retryable-drop behavior holds for the metrics signal path too.
+func TestHandleJetStream_UnmarshalError_AcksNotNaks_Metrics(t *testing.T) {
+	cfg := &Config{Metrics: SignalConfig{Subject: "otlp.metrics", Encoding: "otlp_proto"}}
+	set := receivertest.NewNopSettings(receivertest.NopType)
+	sink := new(consumertest.MetricsSink)
+	rcv, err := newMetricsReceiver(cfg, set, sink)
+	require.NoError(t, err)
+
+	msg := &fakeJSMsg{data: []byte("not a valid otlp proto payload")}
+	rcv.handleJetStream(msg)
+
+	require.True(t, msg.acked, "unprocessable payload must be Acked (dropped), not redelivered")
+	require.False(t, msg.nakCalled)
+	require.Zero(t, msg.nakDelayCount)
+	require.Equal(t, 0, sink.DataPointCount())
 }
 
 // TestHandleJetStream_ExportError_NaksWithDelay proves the fix for the
@@ -261,7 +422,7 @@ func TestHandleJetStream_ExportError_NaksWithDelay(t *testing.T) {
 		return errors.New("simulated downstream export failure")
 	})
 	require.NoError(t, err)
-	rcv, err := newReceiver(cfg, set, failingConsumer)
+	rcv, err := newLogsReceiver(cfg, set, failingConsumer)
 	require.NoError(t, err)
 
 	ld := plog.NewLogs()
@@ -288,7 +449,7 @@ func TestReceiver_OTLPJSONEncoding(t *testing.T) {
 	cfg.TLS.Insecure = true
 	sink := new(consumertest.LogsSink)
 	set := receivertest.NewNopSettings(receivertest.NopType)
-	rcv, err := newReceiver(cfg, set, sink)
+	rcv, err := newLogsReceiver(cfg, set, sink)
 	require.NoError(t, err)
 	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
@@ -326,7 +487,7 @@ func TestReceiver_LastDeliveryRace_ConcurrentDeliverAndScrape(t *testing.T) {
 	set.MeterProvider = mp
 
 	sink := new(consumertest.LogsSink)
-	rcv, err := newReceiver(cfg, set, sink)
+	rcv, err := newLogsReceiver(cfg, set, sink)
 	require.NoError(t, err)
 	require.NoError(t, rcv.Start(t.Context(), componenttest.NewNopHost()))
 	t.Cleanup(func() { require.NoError(t, rcv.Shutdown(t.Context())) })
@@ -340,7 +501,7 @@ func TestReceiver_LastDeliveryRace_ConcurrentDeliverAndScrape(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 200; i++ {
+		for range 200 {
 			// Simulates the NATS client's delivery callback goroutine
 			// writing lastDelivery on every successful delivery.
 			_ = rcv.deliver(t.Context(), racePayload)
@@ -348,10 +509,19 @@ func TestReceiver_LastDeliveryRace_ConcurrentDeliverAndScrape(t *testing.T) {
 	}()
 
 	var rm metricdata.ResourceMetrics
-	for i := 0; i < 200; i++ {
+	for range 200 {
 		// Simulates the OTel SDK's own collection goroutine reading
 		// lastDelivery via the gauge callback on scrape.
 		_ = reader.Collect(t.Context(), &rm)
 	}
 	<-done
+}
+
+func TestNewUnmarshalers_UnsupportedEncoding(t *testing.T) {
+	_, err := newLogsUnmarshaler("bogus")
+	require.Error(t, err)
+	_, err = newMetricsUnmarshaler("bogus")
+	require.Error(t, err)
+	_, err = newTracesUnmarshaler("bogus")
+	require.Error(t, err)
 }
