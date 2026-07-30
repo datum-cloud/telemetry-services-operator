@@ -1,0 +1,67 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: clickhouse-migrate
+  labels:
+    app.kubernetes.io/name: clickhouse-migrations
+    app.kubernetes.io/component: database
+spec:
+  ttlSecondsAfterFinished: 600
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: clickhouse-migrations
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: migrate
+          image: ghcr.io/milo-os/telemetry-clickhouse-migrate:latest
+          env:
+            # Target the first replica directly, not the load-balanced
+            # Service -- with a Replicated database engine, DDL changes
+            # apply to all replicas from any one of them, so this also
+            # avoids concurrent migrations racing across replicas.
+            - name: CLICKHOUSE_HOST
+              value: "chi-telemetry-clickhouse-telemetry-0-0.telemetry-clickhouse.svc.cluster.local"
+            - name: CLICKHOUSE_PORT
+              value: "9440"
+            - name: CLICKHOUSE_USER
+              value: "clickhouse-migrations-client"
+            - name: CLICKHOUSE_DATABASE
+              value: "telemetry"
+            - name: MIGRATIONS_DIR
+              value: "/migrations"
+          volumeMounts:
+            - name: migrations
+              mountPath: /migrations
+              readOnly: true
+            - name: client-certs
+              mountPath: /etc/clickhouse-client/certs
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+      volumes:
+        - name: migrations
+          configMap:
+            name: clickhouse-migrations
+        # PLACEHOLDER -- the consumer must patch this to its own
+        # cert-manager CSI (or equivalent) volume issuing a client cert
+        # whose CN matches a ssl_certificates user on the target
+        # ClickHouse (see CLICKHOUSE_USER above).
+        - name: client-certs
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+              csi.cert-manager.io/issuer-kind: Issuer
+              csi.cert-manager.io/common-name: clickhouse-migrations-client
+              csi.cert-manager.io/duration: "2160h"
+              csi.cert-manager.io/renew-before: "360h"
+              csi.cert-manager.io/key-usages: "client auth"
