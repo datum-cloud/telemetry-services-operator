@@ -5,8 +5,8 @@
 # there is no separate bridge collector.
 dist:
   module: go.datum.net/o11y/otelcol
-  name: telemetry-otelcol
-  description: Datum telemetry edge collector distribution (contrib + unbatch/nats)
+  name: otelcol
+  description: Datum o11y edge collector distribution (contrib + unbatch/nats)
   version: 0.1.0
   output_path: ./_build
 

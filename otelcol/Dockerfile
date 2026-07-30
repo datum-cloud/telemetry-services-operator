@@ -19,7 +19,7 @@ RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
 
 FROM gcr.io/distroless/static:nonroot
 WORKDIR /
-COPY --from=builder /workspace/otelcol/_build/telemetry-otelcol .
+COPY --from=builder /workspace/otelcol/_build/otelcol .
 USER 65532:65532
 
-ENTRYPOINT ["/telemetry-otelcol"]
+ENTRYPOINT ["/otelcol"]
