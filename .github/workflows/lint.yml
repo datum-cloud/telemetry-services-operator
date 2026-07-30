@@ -8,8 +8,12 @@ on:
 
 jobs:
   lint:
-    name: Run on Ubuntu
+    name: Lint (${{ matrix.module }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        module:
+          - operator
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -17,9 +21,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
 
       - name: Run linter
         uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.2
+          working-directory: ${{ matrix.module }}

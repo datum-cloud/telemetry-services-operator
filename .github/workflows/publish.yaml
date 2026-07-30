@@ -17,6 +17,8 @@ jobs:
     with:
       image-name: telemetry
       registry-organization: milo-os
+      context: operator
+      dockerfile-path: operator/Dockerfile
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
@@ -30,5 +32,5 @@ jobs:
       bundle-name: ghcr.io/milo-os/telemetry-kustomize
       bundle-path: config
       image-name: ghcr.io/milo-os/telemetry
-      image-overlays: config/manager
+      image-overlays: operator/config/manager
     secrets: inherit
