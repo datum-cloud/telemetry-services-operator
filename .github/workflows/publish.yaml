@@ -37,6 +37,21 @@ jobs:
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
+  publish-otelcol-image:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    with:
+      image-name: o11y/otelcol
+      registry-organization: milo-os
+      context: .
+      dockerfile-path: otelcol/Dockerfile
+      platforms: linux/amd64,linux/arm64
+    secrets: inherit
+
   publish-kustomize-bundles:
     permissions:
       id-token: write
@@ -61,4 +76,17 @@ jobs:
       bundle-path: config/clickhouse-migrations
       image-name: ghcr.io/milo-os/telemetry-clickhouse-migrate
       image-overlays: config/clickhouse-migrations
+    secrets: inherit
+
+  publish-edge-collectors-kustomize:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
+    with:
+      bundle-name: ghcr.io/milo-os/o11y/edge-collectors-kustomize
+      bundle-path: config/edge-collectors
+      image-name: ghcr.io/milo-os/o11y/otelcol
+      image-overlays: config/edge-collectors
     secrets: inherit
