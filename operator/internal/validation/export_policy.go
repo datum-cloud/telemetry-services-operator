@@ -86,9 +86,7 @@ func validateMetricSource(path *field.Path, metrics telemetryv1alpha1.MetricSour
 }
 
 func validateTelemetrySink(path *field.Path, sink telemetryv1alpha1.TelemetrySink) field.ErrorList {
-	var errs field.ErrorList
-	errs = append(errs, validateTelemetrySinkTarget(path.Child("target"), *sink.Target)...)
-	return errs
+	return validateTelemetrySinkTarget(path.Child("target"), *sink.Target)
 }
 
 func validateTelemetrySinkTarget(path *field.Path, sink telemetryv1alpha1.SinkTarget) field.ErrorList {

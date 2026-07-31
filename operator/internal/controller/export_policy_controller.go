@@ -39,6 +39,10 @@ const (
 	// objects to ensure the downstream vector config Secret is deleted before
 	// the ExportPolicy is removed from the cluster.
 	exportPolicyControllerFinalizer = exportPolicyLabelDomain + "/controller"
+
+	// conditionTypeAccepted is the status condition type set on each sink
+	// reflecting whether its configuration passed validation.
+	conditionTypeAccepted = "Accepted"
 )
 
 // ExportPolicyReconciler reconciles a ExportPolicy object
@@ -239,7 +243,7 @@ func (r *ExportPolicyReconciler) Reconcile(ctx context.Context, req mcreconcile.
 // updates the status of the export policy to reflect the status of the sinks.
 func reconcileExportPolicyStatus(ctx context.Context, client client.Client, exportPolicy *v1alpha1.ExportPolicy) bool {
 	statusChanged := false
-	sinkStatuses := []v1alpha1.SinkStatus{}
+	sinkStatuses := make([]v1alpha1.SinkStatus, 0, len(exportPolicy.Spec.Sinks))
 	// Validate each of the sinks in the export policy have a valid configuration
 	// and the secrets exist if necessary.
 	for _, sink := range exportPolicy.Spec.Sinks {
@@ -257,7 +261,7 @@ func reconcileExportPolicyStatus(ctx context.Context, client client.Client, expo
 					if err != nil {
 						accepted = false
 						updated := apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-							Type:    "Accepted",
+							Type:    conditionTypeAccepted,
 							Status:  metav1.ConditionFalse,
 							Reason:  "InvalidAuthentication",
 							Message: err.Error(),
@@ -272,7 +276,7 @@ func reconcileExportPolicyStatus(ctx context.Context, client client.Client, expo
 
 			if accepted {
 				updated := apimeta.SetStatusCondition(&status.Conditions, metav1.Condition{
-					Type:   "Accepted",
+					Type:   conditionTypeAccepted,
 					Status: metav1.ConditionTrue,
 					Reason: "SinkConfigured",
 				})
@@ -314,7 +318,7 @@ func updateExportPolicyConditions(exportPolicy *v1alpha1.ExportPolicy, sinkStatu
 	var acceptedCount int
 	for _, sinkStatus := range sinkStatuses {
 		for _, condition := range sinkStatus.Conditions {
-			if condition.Type == "Accepted" {
+			if condition.Type == conditionTypeAccepted {
 				if condition.Status == metav1.ConditionTrue {
 					acceptedCount++
 				}

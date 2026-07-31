@@ -15,6 +15,8 @@ jobs:
         include:
           - module: operator
             test-cmd: make test
+          - module: clickhouse-migrate
+            test-cmd: go test ./...
     steps:
       - name: Clone the code
         uses: actions/checkout@v4

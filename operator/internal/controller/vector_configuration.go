@@ -122,7 +122,7 @@ func getSinkVectorConfig(ctx context.Context, client client.Client, projectName 
 
 	// Get all of the sources that are configured for the sink and add them
 	// to the inputs for the prometheus remote write sink.
-	inputs := []string{}
+	inputs := make([]string, 0, len(sink.Sources))
 	for _, source := range sink.Sources {
 		inputs = append(inputs, getVectorComponentID(exportPolicy, projectName, source, vectorSource))
 	}
