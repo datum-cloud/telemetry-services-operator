@@ -49,3 +49,16 @@ jobs:
       image-name: ghcr.io/milo-os/telemetry
       image-overlays: operator/config/manager
     secrets: inherit
+
+  publish-clickhouse-migrations-kustomize:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
+    with:
+      bundle-name: ghcr.io/milo-os/o11y/clickhouse-migrations-kustomize
+      bundle-path: config/clickhouse-migrations
+      image-name: ghcr.io/milo-os/telemetry-clickhouse-migrate
+      image-overlays: config/clickhouse-migrations
+    secrets: inherit

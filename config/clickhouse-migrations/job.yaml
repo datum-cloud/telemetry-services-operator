@@ -23,7 +23,7 @@ spec:
             # apply to all replicas from any one of them, so this also
             # avoids concurrent migrations racing across replicas.
             - name: CLICKHOUSE_HOST
-              value: "chi-telemetry-clickhouse-telemetry-0-0.telemetry-clickhouse.svc.cluster.local"
+              value: "chi-clickhouse-o11y-0-0.clickhouse.svc.cluster.local"
             - name: CLICKHOUSE_PORT
               value: "9440"
             - name: CLICKHOUSE_USER
