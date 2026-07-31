@@ -8,7 +8,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	telemetryv1alpha1 "go.datum.net/o11y/operator/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	// TODO (user): Add any additional imports if needed
 )

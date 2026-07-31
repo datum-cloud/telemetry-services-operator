@@ -8,7 +8,7 @@ import (
 	"github.com/VictoriaMetrics/metricsql"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
-	telemetryv1alpha1 "go.datum.net/telemetry-services-operator/api/v1alpha1"
+	telemetryv1alpha1 "go.datum.net/o11y/operator/api/v1alpha1"
 )
 
 // These labels can not be filtered in on a metricsql query.

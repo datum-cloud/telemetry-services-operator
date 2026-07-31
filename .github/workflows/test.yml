@@ -8,8 +8,13 @@ on:
 
 jobs:
   test:
-    name: Run on Ubuntu
+    name: Test (${{ matrix.module }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - module: operator
+            test-cmd: make test
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
@@ -17,9 +22,10 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: ${{ matrix.module }}/go.mod
 
       - name: Running Tests
+        working-directory: ${{ matrix.module }}
         run: |
           go mod tidy
-          make test
+          ${{ matrix.test-cmd }}

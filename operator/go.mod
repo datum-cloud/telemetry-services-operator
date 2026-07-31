@@ -1,4 +1,4 @@
-module go.datum.net/telemetry-services-operator
+module go.datum.net/o11y/operator
 
 go 1.24.0
 

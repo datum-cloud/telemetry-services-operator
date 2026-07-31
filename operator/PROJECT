@@ -5,8 +5,8 @@
 domain: miloapis.com
 layout:
 - go.kubebuilder.io/v4
-projectName: telemetry-services-operator
-repo: go.datum.net/telemetry-services-operator
+projectName: o11y-operator
+repo: go.datum.net/o11y/operator
 resources:
 - api:
     crdVersion: v1
@@ -15,7 +15,7 @@ resources:
   domain: miloapis.com
   group: telemetry
   kind: ExportPolicy
-  path: go.datum.net/telemetry-services-operator/api/v1alpha1
+  path: go.datum.net/o11y/operator/api/v1alpha1
   version: v1alpha1
   webhooks:
     defaulting: true

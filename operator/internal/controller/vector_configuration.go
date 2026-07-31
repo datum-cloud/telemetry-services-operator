@@ -12,7 +12,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	"go.datum.net/telemetry-services-operator/api/v1alpha1"
+	"go.datum.net/o11y/operator/api/v1alpha1"
 )
 
 // createVectorConfiguration creates a vector configuration for the export policy
