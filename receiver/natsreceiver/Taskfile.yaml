@@ -1,11 +1,6 @@
 version: '3'
 
 tasks:
-  build:
-    desc: Build the clickhouse-migrate binary
-    cmds:
-      - CGO_ENABLED=0 go build -o bin/clickhouse-migrate .
-
   test:
     desc: Run Go tests
     cmds:

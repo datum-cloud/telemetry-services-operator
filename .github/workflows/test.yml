@@ -17,6 +17,8 @@ jobs:
             test-cmd: task test
           - module: clickhouse-migrate
             test-cmd: go test ./...
+          - module: receiver/natsreceiver
+            test-cmd: go test ./...
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
