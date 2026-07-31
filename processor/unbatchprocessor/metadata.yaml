@@ -1,0 +1,13 @@
+display_name: Unbatch Processor
+
+type: unbatch
+
+status:
+  class: processor
+  stability:
+    development: [logs, metrics, traces]
+  codeowners:
+    active: [mcostello]
+
+tests:
+  config:
