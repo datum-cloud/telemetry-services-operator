@@ -40,7 +40,9 @@ type Config struct {
 
 	TLS configtls.ClientConfig `mapstructure:"tls"`
 
-	Logs SignalConfig `mapstructure:"logs"`
+	Logs    SignalConfig `mapstructure:"logs"`
+	Metrics SignalConfig `mapstructure:"metrics"`
+	Traces  SignalConfig `mapstructure:"traces"`
 }
 
 // SignalConfig holds signal-specific configuration for the NATS receiver.
@@ -64,7 +66,13 @@ func (c *Config) Validate() error {
 	if c.Stream == "" && c.ConsumerName != "" {
 		return errors.New("stream must be set when consumer_name is set")
 	}
-	return c.Logs.validate("logs")
+	if err := c.Logs.validate("logs"); err != nil {
+		return err
+	}
+	if err := c.Metrics.validate("metrics"); err != nil {
+		return err
+	}
+	return c.Traces.validate("traces")
 }
 
 func (c *SignalConfig) validate(name string) error {
