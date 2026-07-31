@@ -107,7 +107,11 @@ func run() error {
 		},
 		TLS: tlsConfig,
 	})
-	defer db.Close()
+	defer func() {
+		if err := db.Close(); err != nil {
+			logger.Error("closing clickhouse connection", "error", err)
+		}
+	}()
 
 	driver, err := chmigrate.WithInstance(db, &chmigrate.Config{
 		DatabaseName:    cfg.database,
