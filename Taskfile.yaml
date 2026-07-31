@@ -1,0 +1,34 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build every module that has its own build task
+    cmds:
+      - task: operator:build
+      - task: clickhouse-migrate:build
+
+  test:
+    desc: Test every module that has its own test task
+    cmds:
+      - task: operator:test
+      - task: clickhouse-migrate:test
+
+  lint:
+    desc: Lint every module that has its own lint task
+    cmds:
+      - task: operator:lint
+      - task: clickhouse-migrate:lint
+
+  ci:
+    desc: Run everything CI runs, locally, before pushing
+    cmds:
+      - task: lint
+      - task: test
+
+includes:
+  operator:
+    taskfile: ./operator
+    dir: ./operator
+  clickhouse-migrate:
+    taskfile: ./clickhouse-migrate
+    dir: ./clickhouse-migrate

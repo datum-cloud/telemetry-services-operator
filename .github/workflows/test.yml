@@ -14,7 +14,7 @@ jobs:
       matrix:
         include:
           - module: operator
-            test-cmd: make test
+            test-cmd: task test
           - module: clickhouse-migrate
             test-cmd: go test ./...
     steps:
@@ -25,6 +25,11 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: ${{ matrix.module }}/go.mod
+
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
 
       - name: Running Tests
         working-directory: ${{ matrix.module }}

@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -49,6 +50,17 @@ var (
 	projectImage = "example.com/telemetry-services-operator:v0.0.1"
 )
 
+// taskImageVars splits "repo:tag" into the IMAGE_NAME/IMAGE_TAG task
+// variables the Taskfile's docker-build/deploy tasks expect (unlike the
+// old Makefile's single combined IMG variable).
+func taskImageVars(image string) []string {
+	name, tag, _ := strings.Cut(image, ":")
+	return []string{
+		fmt.Sprintf("IMAGE_NAME=%s", name),
+		fmt.Sprintf("IMAGE_TAG=%s", tag),
+	}
+}
+
 // TestE2E runs the end-to-end (e2e) test suite for the project. These tests
 // execute in an isolated, temporary environment to validate project changes
 // with the the purposed to be used in CI jobs. The default setup requires Kind,
@@ -61,7 +73,7 @@ func TestE2E(t *testing.T) {
 
 var _ = BeforeSuite(func() {
 	By("building the manager(Operator) image")
-	cmd := exec.Command("make", "docker-build", fmt.Sprintf("IMG=%s", projectImage))
+	cmd := exec.Command("task", append([]string{"docker-build"}, taskImageVars(projectImage)...)...)
 	_, err := utils.Run(cmd)
 	ExpectWithOffset(1, err).NotTo(HaveOccurred(), "Failed to build the manager(Operator) image")
 
