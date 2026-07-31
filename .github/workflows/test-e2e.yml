@@ -19,6 +19,11 @@ jobs:
         with:
           go-version-file: operator/go.mod
 
+      - name: Setup Task
+        uses: arduino/setup-task@v2
+        with:
+          version: 3.x
+
       - name: Install the latest version of kind
         run: |
           curl -Lo ./kind https://kind.sigs.k8s.io/dl/latest/kind-linux-amd64
@@ -35,4 +40,4 @@ jobs:
         working-directory: operator
         run: |
           go mod tidy
-          make test-e2e
+          task test-e2e
