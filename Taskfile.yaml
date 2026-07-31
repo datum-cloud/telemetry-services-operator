@@ -13,6 +13,7 @@ tasks:
       - task: operator:test
       - task: clickhouse-migrate:test
       - task: natsreceiver:test
+      - task: natsexporter:test
 
   lint:
     desc: Lint every module that has its own lint task
@@ -20,6 +21,7 @@ tasks:
       - task: operator:lint
       - task: clickhouse-migrate:lint
       - task: natsreceiver:lint
+      - task: natsexporter:lint
 
   ci:
     desc: Run everything CI runs, locally, before pushing
@@ -37,3 +39,6 @@ includes:
   natsreceiver:
     taskfile: ./receiver/natsreceiver
     dir: ./receiver/natsreceiver
+  natsexporter:
+    taskfile: ./exporter/natsexporter
+    dir: ./exporter/natsexporter
