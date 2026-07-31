@@ -15,6 +15,7 @@ jobs:
         module:
           - operator
           - clickhouse-migrate
+          - receiver/natsreceiver
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
