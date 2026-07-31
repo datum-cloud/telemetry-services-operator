@@ -77,7 +77,7 @@ func newLogsUnmarshaler(encoding string) (plog.Unmarshaler, error) {
 }
 
 func (r *natsReceiver) Start(ctx context.Context, _ component.Host) error {
-	meter := r.set.TelemetrySettings.MeterProvider.Meter("go.datum.net/o11y/receiver/natsreceiver")
+	meter := r.set.MeterProvider.Meter("go.datum.net/o11y/receiver/natsreceiver")
 
 	lastDeliveryGauge, err := meter.Float64ObservableGauge(
 		"natsreceiver_seconds_since_last_delivery",

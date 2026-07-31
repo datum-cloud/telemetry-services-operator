@@ -323,7 +323,7 @@ func TestReceiver_LastDeliveryRace_ConcurrentDeliverAndScrape(t *testing.T) {
 	cfg := &Config{URL: srv.ClientURL(), Logs: SignalConfig{Subject: "otlp.logs", Encoding: "otlp_proto"}}
 	cfg.TLS.Insecure = true
 	set := receivertest.NewNopSettings(receivertest.NopType)
-	set.TelemetrySettings.MeterProvider = mp
+	set.MeterProvider = mp
 
 	sink := new(consumertest.LogsSink)
 	rcv, err := newReceiver(cfg, set, sink)
