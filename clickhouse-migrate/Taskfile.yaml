@@ -10,3 +10,8 @@ tasks:
     desc: Run Go tests
     cmds:
       - go test ./...
+
+  lint:
+    desc: Run golangci-lint (assumes it's installed on PATH -- see CI's pinned version)
+    cmds:
+      - golangci-lint run

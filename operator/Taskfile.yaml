@@ -10,7 +10,7 @@ vars:
   PLATFORMS: "linux/arm64,linux/amd64,linux/s390x,linux/ppc64le"
   KUSTOMIZE_VERSION: "v5.5.0"
   CONTROLLER_TOOLS_VERSION: "v0.17.2"
-  GOLANGCI_LINT_VERSION: "v1.63.4"
+  GOLANGCI_LINT_VERSION: "v2.12.2"
   CRDOC_VERSION: "v0.6.4"
   # Mirrors the Makefile's dynamic derivation from the controller-runtime/k8s.io/api
   # module versions in go.mod, rather than a hardcoded string.
@@ -61,7 +61,7 @@ tasks:
         # golangci-lint
         if [ ! -f "{{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}" ]; then
           echo "Installing golangci-lint {{.GOLANGCI_LINT_VERSION}}..."
-          GOBIN={{.TOOL_DIR}} go install github.com/golangci/golangci-lint/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
+          GOBIN={{.TOOL_DIR}} go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_LINT_VERSION}}
           mv {{.TOOL_DIR}}/golangci-lint {{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}}
         fi
         ln -sf {{.TOOL_DIR}}/golangci-lint-{{.GOLANGCI_LINT_VERSION}} {{.TOOL_DIR}}/golangci-lint

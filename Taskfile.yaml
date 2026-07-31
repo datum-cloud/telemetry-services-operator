@@ -13,6 +13,18 @@ tasks:
       - task: operator:test
       - task: clickhouse-migrate:test
 
+  lint:
+    desc: Lint every module that has its own lint task
+    cmds:
+      - task: operator:lint
+      - task: clickhouse-migrate:lint
+
+  ci:
+    desc: Run everything CI runs, locally, before pushing
+    cmds:
+      - task: lint
+      - task: test
+
 includes:
   operator:
     taskfile: ./operator
