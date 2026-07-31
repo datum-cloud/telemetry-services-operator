@@ -1,0 +1,15 @@
+version: '3'
+
+tasks:
+  test:
+    desc: Run Go tests
+    cmds:
+      - go test ./...
+
+  lint:
+    desc: Run golangci-lint (assumes it's installed on PATH -- see CI's pinned version)
+    cmds:
+      # --no-config: this module intentionally has no .golangci.yml (relies on
+      # golangci-lint's defaults, matching CI's clean-checkout behavior) -- pin
+      # that explicitly so a stray config file above the repo root can't leak in.
+      - golangci-lint run --no-config

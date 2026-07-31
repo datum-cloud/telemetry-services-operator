@@ -14,6 +14,7 @@ tasks:
       - task: clickhouse-migrate:test
       - task: natsreceiver:test
       - task: natsexporter:test
+      - task: unbatchprocessor:test
 
   lint:
     desc: Lint every module that has its own lint task
@@ -22,6 +23,7 @@ tasks:
       - task: clickhouse-migrate:lint
       - task: natsreceiver:lint
       - task: natsexporter:lint
+      - task: unbatchprocessor:lint
 
   ci:
     desc: Run everything CI runs, locally, before pushing
@@ -42,3 +44,6 @@ includes:
   natsexporter:
     taskfile: ./exporter/natsexporter
     dir: ./exporter/natsexporter
+  unbatchprocessor:
+    taskfile: ./processor/unbatchprocessor
+    dir: ./processor/unbatchprocessor
