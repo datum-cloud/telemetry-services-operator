@@ -17,6 +17,7 @@ jobs:
           - clickhouse-migrate
           - receiver/natsreceiver
           - exporter/natsexporter
+          - processor/unbatchprocessor
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
