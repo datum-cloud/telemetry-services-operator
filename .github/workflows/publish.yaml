@@ -30,7 +30,7 @@ jobs:
     uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
     with:
       bundle-name: ghcr.io/milo-os/telemetry-kustomize
-      bundle-path: config
+      bundle-path: operator/config
       image-name: ghcr.io/milo-os/telemetry
       image-overlays: operator/config/manager
     secrets: inherit
