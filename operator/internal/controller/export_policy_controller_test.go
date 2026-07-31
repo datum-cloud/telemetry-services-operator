@@ -19,6 +19,8 @@ import (
 	telemetryv1alpha1 "go.datum.net/o11y/operator/api/v1alpha1"
 )
 
+const testNamespace = "default"
+
 var _ = Describe("ExportPolicy Controller", func() {
 	Context("When reconciling a resource", func() {
 		const resourceName = "test-resource"
@@ -27,7 +29,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 
 		typeNamespacedName := types.NamespacedName{
 			Name:      resourceName,
-			Namespace: "default", // TODO(user):Modify as needed
+			Namespace: testNamespace, // TODO(user):Modify as needed
 		}
 		exportpolicy := &telemetryv1alpha1.ExportPolicy{}
 
@@ -38,7 +40,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 				resource := &telemetryv1alpha1.ExportPolicy{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      resourceName,
-						Namespace: "default",
+						Namespace: testNamespace,
 					},
 					Spec: telemetryv1alpha1.ExportPolicySpec{
 						Sources: []telemetryv1alpha1.TelemetrySource{
@@ -97,7 +99,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 			finalizers := finalizer.NewFinalizers()
 			secretFinalizer := &vectorSecretFinalizer{
 				downstreamClient:                k8sClient,
-				downstreamVectorConfigNamespace: "default",
+				downstreamVectorConfigNamespace: testNamespace,
 			}
 			Expect(finalizers.Register(exportPolicyControllerFinalizer, secretFinalizer)).To(Succeed())
 
@@ -106,7 +108,7 @@ var _ = Describe("ExportPolicy Controller", func() {
 				VectorConfigLabelValue:          "true",
 				mgr:                             mgr,
 				DownstreamClient:                k8sClient,
-				DownstreamVectorConfigNamespace: "default",
+				DownstreamVectorConfigNamespace: testNamespace,
 				finalizers:                      finalizers,
 			}
 

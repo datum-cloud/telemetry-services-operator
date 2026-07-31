@@ -62,8 +62,8 @@ func TestCreateVectorConfiguration(t *testing.T) {
 			exportPolicy: newExportPolicy(func(ep *v1alpha1.ExportPolicy) {
 				ep.Spec.Sinks = []v1alpha1.TelemetrySink{
 					{
-						Name:    "source",
-						Sources: []string{"source"},
+						Name:    vectorSource,
+						Sources: []string{vectorSource},
 						Target: &v1alpha1.SinkTarget{
 							PrometheusRemoteWrite: &v1alpha1.PrometheusRemoteWriteSink{},
 						},
@@ -102,7 +102,7 @@ func newExportPolicy(opts ...func(*v1alpha1.ExportPolicy)) *v1alpha1.ExportPolic
 		Spec: v1alpha1.ExportPolicySpec{
 			Sources: []v1alpha1.TelemetrySource{
 				{
-					Name: "source",
+					Name: vectorSource,
 					Metrics: &v1alpha1.MetricSource{
 						MetricsQL: "{}",
 					},
@@ -111,7 +111,7 @@ func newExportPolicy(opts ...func(*v1alpha1.ExportPolicy)) *v1alpha1.ExportPolic
 			Sinks: []v1alpha1.TelemetrySink{
 				{
 					Name:    "sink",
-					Sources: []string{"source"},
+					Sources: []string{vectorSource},
 					Target: &v1alpha1.SinkTarget{
 						PrometheusRemoteWrite: &v1alpha1.PrometheusRemoteWriteSink{},
 					},
