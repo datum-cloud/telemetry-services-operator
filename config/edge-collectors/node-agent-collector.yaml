@@ -1,6 +1,4 @@
-# Generic node-local agent -- see README.md. SCAFFOLD: node-exporter
-# scrape and generic pod metrics are still TBD; only pod logs are wired
-# up so far.
+# Generic node-local agent -- see README.md.
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:

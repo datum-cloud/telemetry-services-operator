@@ -33,7 +33,7 @@ spec:
   config:
     receivers:
       # Centralized OTLP push receiver -- for any sender that talks OTLP
-      # natively (Envoy, and now ukp-telemetry too). See README.md.
+      # natively (e.g. Envoy, ukp-telemetry). See README.md.
       otlp:
         protocols:
           grpc:

@@ -3,7 +3,7 @@
 # Edge PoPs have no local persistent storage, so this runs core NATS
 # pub/sub only -- no stream, no durability at this hop. It makes a leaf
 # connection (NATS_HUB_LEAFNODE_URL) to a real, storage-backed hub for
-# durability; ClickHouse ingestion off that hub is separate follow-up work.
+# durability.
 apiVersion: v1
 kind: ConfigMap
 metadata:
