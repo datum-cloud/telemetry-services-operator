@@ -37,6 +37,11 @@ func TestConfigFromEnv_Defaults(t *testing.T) {
 	require.Equal(t, "/etc/clickhouse-client/certs/tls.crt", cfg.tlsCertFile)
 }
 
+func TestQuoteIdentifier(t *testing.T) {
+	require.Equal(t, "`o11y`", quoteIdentifier("o11y"))
+	require.Equal(t, "`o11y``; DROP TABLE x`", quoteIdentifier("o11y`; DROP TABLE x"))
+}
+
 func TestLoadClientTLSConfig(t *testing.T) {
 	dir := t.TempDir()
 	certFile, keyFile, caFile := writeTestCert(t, dir)

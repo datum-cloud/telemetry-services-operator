@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"strings"
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/golang-migrate/migrate/v4"
@@ -86,6 +87,31 @@ func loadClientTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) 
 	}, nil
 }
 
+// ensureDatabaseExists creates cfg.database if it doesn't already exist,
+// e.g. on a brand-new ClickHouse instance. It connects without pinning the
+// session to that database -- clickhouse-go validates Auth.Database against
+// the server at connect time, so opening a connection already scoped to a
+// not-yet-created database fails before any CREATE DATABASE can run.
+func ensureDatabaseExists(cfg config, tlsConfig *tls.Config) (err error) {
+	bootstrapDB := clickhousego.OpenDB(&clickhousego.Options{
+		Addr: []string{fmt.Sprintf("%s:%s", cfg.host, cfg.port)},
+		Auth: clickhousego.Auth{
+			Username: cfg.username,
+		},
+		TLS: tlsConfig,
+	})
+	defer func() {
+		err = errors.Join(err, bootstrapDB.Close())
+	}()
+
+	_, err = bootstrapDB.Exec("CREATE DATABASE IF NOT EXISTS " + quoteIdentifier(cfg.database))
+	return err
+}
+
+func quoteIdentifier(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
 func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -97,6 +123,11 @@ func run() error {
 	tlsConfig, err := loadClientTLSConfig(cfg.tlsCertFile, cfg.tlsKeyFile, cfg.tlsCAFile)
 	if err != nil {
 		return fmt.Errorf("loading TLS config: %w", err)
+	}
+
+	logger.Info("ensuring database exists", "database", cfg.database)
+	if err := ensureDatabaseExists(cfg, tlsConfig); err != nil {
+		return fmt.Errorf("ensuring database exists: %w", err)
 	}
 
 	db := clickhousego.OpenDB(&clickhousego.Options{
