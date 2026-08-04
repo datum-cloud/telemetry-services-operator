@@ -77,3 +77,16 @@ jobs:
       image-name: ghcr.io/milo-os/telemetry-clickhouse-migrate
       image-overlays: config/clickhouse-migrations
     secrets: inherit
+
+  publish-edge-collectors-kustomize:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
+    with:
+      bundle-name: ghcr.io/milo-os/o11y/edge-collectors-kustomize
+      bundle-path: config/edge-collectors
+      image-name: ghcr.io/milo-os/o11y/otelcol
+      image-overlays: config/edge-collectors
+    secrets: inherit
