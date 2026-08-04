@@ -37,6 +37,21 @@ jobs:
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
+  publish-otelcol-image:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    with:
+      image-name: o11y/otelcol
+      registry-organization: milo-os
+      context: .
+      dockerfile-path: otelcol/Dockerfile
+      platforms: linux/amd64,linux/arm64
+    secrets: inherit
+
   publish-kustomize-bundles:
     permissions:
       id-token: write
