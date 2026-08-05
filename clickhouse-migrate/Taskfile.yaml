@@ -11,6 +11,30 @@ tasks:
     cmds:
       - go test ./...
 
+  check-migrations:
+    desc: Validate the SQL migration files (also runs as part of "task test")
+    cmds:
+      - go test -count=1 -run TestMigrationFiles -v .
+
+  test-integration:
+    desc: Run the migration tests against a throwaway ClickHouse container (needs docker)
+    vars:
+      IMAGE: clickhouse/clickhouse-server:25.3
+      CONTAINER: clickhouse-migrate-test
+      PASSWORD: test
+      PORT: 19000
+    cmds:
+      - docker rm -f {{.CONTAINER}} >/dev/null 2>&1 || true
+      - docker run -d --name {{.CONTAINER}} -e CLICKHOUSE_PASSWORD={{.PASSWORD}} -p {{.PORT}}:9000 {{.IMAGE}}
+      - defer: docker rm -f {{.CONTAINER}} >/dev/null
+      # Poll instead of sleeping a fixed amount: startup time varies.
+      - |
+        for i in $(seq 1 60); do
+          docker exec {{.CONTAINER}} clickhouse-client --password {{.PASSWORD}} -q 'SELECT 1' >/dev/null 2>&1 && break
+          sleep 1
+        done
+      - CLICKHOUSE_TEST_ADDR=127.0.0.1:{{.PORT}} CLICKHOUSE_TEST_PASSWORD={{.PASSWORD}} go test -count=1 -v ./...
+
   lint:
     desc: Run golangci-lint (assumes it's installed on PATH -- see CI's pinned version)
     cmds:

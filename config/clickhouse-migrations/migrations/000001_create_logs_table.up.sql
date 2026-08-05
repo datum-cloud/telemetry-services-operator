@@ -1,6 +1,4 @@
-CREATE DATABASE IF NOT EXISTS o11y;
-
-CREATE TABLE IF NOT EXISTS o11y.logs
+CREATE TABLE IF NOT EXISTS logs
 (
     Timestamp DateTime64(9),
     TraceId String,

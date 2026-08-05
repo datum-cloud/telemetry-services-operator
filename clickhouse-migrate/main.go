@@ -6,6 +6,7 @@ package main
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -112,6 +113,40 @@ func quoteIdentifier(name string) string {
 	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
 
+// applyMigrations brings db up to the latest migration in cfg.migrationsDir
+// and reports the resulting version. db must already be scoped to
+// cfg.database. Reaching the latest version already is not an error.
+func applyMigrations(db *sql.DB, cfg config) (uint, bool, error) {
+	driver, err := chmigrate.WithInstance(db, &chmigrate.Config{
+		DatabaseName:    cfg.database,
+		MigrationsTable: cfg.migrationsTable,
+		// ClickHouse rejects multiple statements in a single query, so the
+		// driver has to split migration files on ";" itself. Without this a
+		// file containing more than one statement fails with "Multi-statements
+		// are not allowed" *after* migrate has flagged the version dirty,
+		// which then blocks every subsequent run.
+		MultiStatementEnabled: true,
+	})
+	if err != nil {
+		return 0, false, fmt.Errorf("initializing clickhouse migrate driver: %w", err)
+	}
+
+	m, err := migrate.NewWithDatabaseInstance("file://"+cfg.migrationsDir, "clickhouse", driver)
+	if err != nil {
+		return 0, false, fmt.Errorf("initializing migrate instance: %w", err)
+	}
+
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return 0, false, fmt.Errorf("applying migrations: %w", err)
+	}
+
+	version, dirty, err := m.Version()
+	if err != nil {
+		return 0, false, fmt.Errorf("reading migration version: %w", err)
+	}
+	return version, dirty, nil
+}
+
 func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
@@ -144,31 +179,10 @@ func run() error {
 		}
 	}()
 
-	driver, err := chmigrate.WithInstance(db, &chmigrate.Config{
-		DatabaseName:    cfg.database,
-		MigrationsTable: cfg.migrationsTable,
-	})
-	if err != nil {
-		return fmt.Errorf("initializing clickhouse migrate driver: %w", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance("file://"+cfg.migrationsDir, "clickhouse", driver)
-	if err != nil {
-		return fmt.Errorf("initializing migrate instance: %w", err)
-	}
-
 	logger.Info("applying migrations", "database", cfg.database, "migrations_dir", cfg.migrationsDir)
-	if err := m.Up(); err != nil {
-		if errors.Is(err, migrate.ErrNoChange) {
-			logger.Info("no new migrations to apply")
-			return nil
-		}
-		return fmt.Errorf("applying migrations: %w", err)
-	}
-
-	version, dirty, err := m.Version()
+	version, dirty, err := applyMigrations(db, cfg)
 	if err != nil {
-		return fmt.Errorf("reading migration version: %w", err)
+		return err
 	}
 	logger.Info("migrations applied", "version", version, "dirty", dirty)
 	return nil
