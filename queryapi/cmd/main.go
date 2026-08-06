@@ -9,6 +9,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 
 	"go.datum.net/o11y/queryapi"
 	"go.datum.net/o11y/queryapi/internal/storage"
+	"go.datum.net/o11y/queryapi/internal/storage/clickhouse"
 	"go.datum.net/o11y/queryapi/internal/storage/fake"
 )
 
@@ -37,6 +39,13 @@ func main() {
 	if err != nil {
 		logger.Error("configure storage", "error", err)
 		os.Exit(1)
+	}
+	if closer, ok := store.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				logger.Error("close storage", "error", err)
+			}
+		}()
 	}
 
 	srv := &http.Server{
@@ -72,12 +81,17 @@ func main() {
 	}
 }
 
-// newStore builds the configured storage backend. The clickhouse case lands
-// in the next change; until then only fake is selectable.
+// newStore builds the configured storage backend.
 func newStore(cfg queryapi.Config) (storage.LogStore, error) {
 	switch cfg.Storage {
 	case "fake":
 		return fake.New(cfg.FakeRate), nil
+	case "clickhouse":
+		chCfg, err := clickhouse.ConfigFromEnv()
+		if err != nil {
+			return nil, err
+		}
+		return clickhouse.New(chCfg)
 	default:
 		return nil, fmt.Errorf("unknown storage backend %q", cfg.Storage)
 	}
