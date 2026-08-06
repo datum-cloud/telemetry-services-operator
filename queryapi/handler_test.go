@@ -5,6 +5,7 @@ package queryapi_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -167,5 +168,69 @@ func TestUnscopedRequestIsUnauthorized(t *testing.T) {
 
 	if resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	}
+}
+
+// TestSeriesUnionsSelectors pins Loki's union semantics for repeated match[]:
+// two selectors return both label sets, the same selector twice returns no
+// duplicates, and a missing selector is a 400.
+func TestSeriesUnionsSelectors(t *testing.T) {
+	cfg := queryapi.DefaultConfig()
+	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(20), cfg))
+	defer srv.Close()
+
+	get := func(t *testing.T, query string) (int, []map[string]string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/loki/api/v1/series?"+query, nil)
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.Header.Set("X-Project-Id", "test-project")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Logf("close response body: %v", err)
+			}
+		}()
+
+		var body struct {
+			Status string              `json:"status"`
+			Data   []map[string]string `json:"data"`
+		}
+		if resp.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+		}
+		return resp.StatusCode, body.Data
+	}
+
+	code, data := get(t, `match[]={service_name="waf"}&match[]={service_name="envoy-gateway"}`)
+	if code != http.StatusOK {
+		t.Fatalf("two selectors: status = %d, want 200", code)
+	}
+	services := map[string]bool{}
+	for _, ls := range data {
+		services[ls["service_name"]] = true
+	}
+	if !services["waf"] || !services["envoy-gateway"] {
+		t.Errorf("two selectors returned services %v, want both waf and envoy-gateway", services)
+	}
+
+	_, dup := get(t, `match[]={service_name="waf"}&match[]={service_name="waf"}`)
+	_, single := get(t, `match[]={service_name="waf"}`)
+	if len(dup) != len(single) {
+		t.Errorf("repeated identical selector returned %d series, want %d (deduped)", len(dup), len(single))
+	}
+	if len(single) == 0 {
+		t.Error("single waf selector returned no series; the test would be vacuous")
+	}
+
+	if code, _ := get(t, ""); code != http.StatusBadRequest {
+		t.Errorf("no match[]: status = %d, want 400", code)
 	}
 }

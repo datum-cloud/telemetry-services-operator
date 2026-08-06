@@ -188,6 +188,13 @@ func (h *handler) lokiLabelValues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) lokiSeries(w http.ResponseWriter, r *http.Request) {
+	// openapi.yaml declares match[] required, as Loki's own /series does.
+	matches := r.URL.Query()["match[]"]
+	if len(matches) == 0 {
+		writeError(w, http.StatusBadRequest, "at least one match[] selector is required")
+		return
+	}
+
 	tr, ok := h.timeRange(w, r)
 	if !ok {
 		return
@@ -199,7 +206,7 @@ func (h *handler) lokiSeries(w http.ResponseWriter, r *http.Request) {
 	// selector, deduped on the way out.
 	seen := map[string]bool{}
 	out := make([]map[string]string, 0)
-	for _, match := range r.URL.Query()["match[]"] {
+	for _, match := range matches {
 		q, ok := h.parseLogQL(w, match)
 		if !ok {
 			return
