@@ -44,3 +44,23 @@ func TestLabelSetKeyIsOrderIndependent(t *testing.T) {
 		t.Error("Key() collides for different label sets")
 	}
 }
+
+// TestLabelSetKeyResistsSeparatorForgery guards the grouping key against label
+// values that contain whatever bytes Key() uses internally. Attribute values
+// are arbitrary log data, so a value must never be able to imitate a
+// separator and merge two unrelated streams.
+func TestLabelSetKeyResistsSeparatorForgery(t *testing.T) {
+	cases := [][2]storage.LabelSet{
+		{{"x": "a\x01y\x00b"}, {"x": "a", "y": "b"}},
+		{{"x": "a,y=b"}, {"x": "a", "y": "b"}},
+		{{"x": "1:a=1:b"}, {"x": "a", "y": "b"}},
+		{{"xy": "b"}, {"x": "yb"}},
+	}
+
+	for i, pair := range cases {
+		if pair[0].Key() == pair[1].Key() {
+			t.Errorf("case %d: Key() collides for %v and %v: %q",
+				i, pair[0], pair[1], pair[0].Key())
+		}
+	}
+}

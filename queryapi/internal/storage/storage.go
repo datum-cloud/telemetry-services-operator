@@ -8,6 +8,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -52,14 +53,16 @@ type LogQuery struct {
 // LabelSet is a stream's labels.
 type LabelSet map[string]string
 
-// Key returns a stable identity for grouping rows into streams.
+// Key returns a stable identity for grouping rows into streams. Lengths are
+// encoded so no byte sequence in a name or value can imitate a separator --
+// attribute values are arbitrary log data.
 func (l LabelSet) Key() string {
 	pairs := make([]string, 0, len(l))
 	for k, v := range l {
-		pairs = append(pairs, k+"\x00"+v)
+		pairs = append(pairs, fmt.Sprintf("%d:%s=%d:%s", len(k), k, len(v), v))
 	}
 	sort.Strings(pairs)
-	return strings.Join(pairs, "\x01")
+	return strings.Join(pairs, ",")
 }
 
 // Row is one log line with its resolved stream labels.
