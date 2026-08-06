@@ -63,6 +63,11 @@ func closingBrace(s string) (int, error) {
 			return i, nil
 		}
 	}
+	// Distinguish the causes: a missing quote and a missing brace send the
+	// reader to different places in their query.
+	if inQuote {
+		return 0, errors.New("logql: unterminated string in stream selector")
+	}
 	return 0, errors.New("logql: unclosed stream selector")
 }
 

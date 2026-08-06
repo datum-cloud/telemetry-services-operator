@@ -61,7 +61,7 @@ func TestParseRejects(t *testing.T) {
 		{"line_format", `{service_name="waf"} | line_format "{{.x}}"`, "not supported"},
 		{"label_format", `{service_name="waf"} | label_format x=y`, "not supported"},
 		{"unclosed selector", `{service_name="waf"`, "unclosed"},
-		{"unterminated string", `{service_name="waf}`, "unclosed"},
+		{"unterminated string", `{service_name="waf}`, "unterminated"},
 		{"missing operator", `{service_name}`, "expected"},
 		{"bad label regexp", `{service_name=~"("}`, "invalid regexp"},
 		{"bad filter regexp", `{service_name="waf"} |~ "("`, "invalid regexp"},
