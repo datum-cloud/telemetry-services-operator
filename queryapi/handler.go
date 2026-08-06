@@ -9,7 +9,6 @@ package queryapi
 
 import (
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -76,30 +75,25 @@ type handler struct {
 	logger *slog.Logger
 }
 
-// parseLogQL parses raw as the LogQL subset this service accepts. It treats
-// the not-yet-implemented parser as distinct from a genuine parse error,
-// writing a 400 only for the latter; either way there's no parsed query to
-// act on yet, hence the single ok bool rather than returning the query.
-func (h *handler) parseLogQL(w http.ResponseWriter, raw string) (ok bool) {
-	if raw == "" {
-		return true
-	}
-	if _, err := logql.Parse(raw); err != nil && !errors.Is(err, logql.ErrNotImplemented) {
+// parseLogQL parses raw, writing a 400 and returning false on failure.
+func (h *handler) parseLogQL(w http.ResponseWriter, raw string) (*logql.Query, bool) {
+	q, err := logql.Parse(raw)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
-		return false
+		return nil, false
 	}
-	return true
+	return q, true
 }
 
 func (h *handler) lokiQuery(w http.ResponseWriter, r *http.Request) {
-	if !h.parseLogQL(w, r.URL.Query().Get("query")) {
+	if _, ok := h.parseLogQL(w, r.URL.Query().Get("query")); !ok {
 		return
 	}
 	writeNotImplemented(w, "lokiQuery")
 }
 
 func (h *handler) lokiQueryRange(w http.ResponseWriter, r *http.Request) {
-	if !h.parseLogQL(w, r.URL.Query().Get("query")) {
+	if _, ok := h.parseLogQL(w, r.URL.Query().Get("query")); !ok {
 		return
 	}
 	writeNotImplemented(w, "lokiQueryRange")
@@ -110,15 +104,17 @@ func (h *handler) lokiLabelNames(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) lokiLabelValues(w http.ResponseWriter, r *http.Request) {
-	if !h.parseLogQL(w, r.URL.Query().Get("query")) {
-		return
+	if raw := r.URL.Query().Get("query"); raw != "" {
+		if _, ok := h.parseLogQL(w, raw); !ok {
+			return
+		}
 	}
 	writeNotImplemented(w, "lokiLabelValues")
 }
 
 func (h *handler) lokiSeries(w http.ResponseWriter, r *http.Request) {
 	for _, match := range r.URL.Query()["match[]"] {
-		if !h.parseLogQL(w, match) {
+		if _, ok := h.parseLogQL(w, match); !ok {
 			return
 		}
 	}
