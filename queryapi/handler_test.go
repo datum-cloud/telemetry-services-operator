@@ -12,7 +12,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -20,6 +22,9 @@ import (
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 
 	"go.datum.net/o11y/queryapi"
+	"go.datum.net/o11y/queryapi/internal/logql"
+	"go.datum.net/o11y/queryapi/internal/miloauth"
+	"go.datum.net/o11y/queryapi/internal/storage"
 	"go.datum.net/o11y/queryapi/internal/storage/fake"
 )
 
@@ -48,6 +53,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 	router := loadSpec(t)
 
 	cfg := queryapi.DefaultConfig()
+	cfg.TrustProjectHeader = true
 	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
 	defer srv.Close()
 
@@ -176,6 +182,7 @@ func TestUnscopedRequestIsUnauthorized(t *testing.T) {
 // duplicates, and a missing selector is a 400.
 func TestSeriesUnionsSelectors(t *testing.T) {
 	cfg := queryapi.DefaultConfig()
+	cfg.TrustProjectHeader = true
 	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(20), cfg))
 	defer srv.Close()
 
@@ -235,5 +242,142 @@ func TestSeriesUnionsSelectors(t *testing.T) {
 
 	if code, _ := get(t, ""); code != http.StatusBadRequest {
 		t.Errorf("no match[]: status = %d, want 400", code)
+	}
+}
+
+// recordingStore records the project each query was scoped to, so a routing
+// test can assert the identity that reached the backend.
+type recordingStore struct {
+	mu      sync.Mutex
+	project string
+}
+
+func (s *recordingStore) note(ctx context.Context) error {
+	id, ok := miloauth.ProjectID(ctx)
+	if !ok {
+		return storage.ErrNoProject
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.project = id
+	return nil
+}
+
+func (s *recordingStore) seen() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.project
+}
+
+func (s *recordingStore) QueryLogs(ctx context.Context, q storage.LogQuery) (storage.LogIterator, error) {
+	if err := s.note(ctx); err != nil {
+		return nil, err
+	}
+	return &oneRowIterator{row: storage.Row{
+		Timestamp: time.Unix(0, 1).UTC(),
+		Labels:    storage.LabelSet{"service_name": "waf"},
+		Line:      "recorded",
+	}}, nil
+}
+
+func (s *recordingStore) LabelNames(ctx context.Context, _ storage.TimeRange) ([]string, error) {
+	return nil, s.note(ctx)
+}
+
+func (s *recordingStore) LabelValues(ctx context.Context, _ string, _ storage.TimeRange) ([]string, error) {
+	return nil, s.note(ctx)
+}
+
+func (s *recordingStore) Series(ctx context.Context, _ []logql.LabelMatcher, _ storage.TimeRange) ([]storage.LabelSet, error) {
+	return nil, s.note(ctx)
+}
+
+func (s *recordingStore) Ping(context.Context) error { return nil }
+
+type oneRowIterator struct {
+	row  storage.Row
+	done bool
+}
+
+func (i *oneRowIterator) Next() bool {
+	if i.done {
+		return false
+	}
+	i.done = true
+	return true
+}
+
+func (i *oneRowIterator) Row() storage.Row { return i.row }
+func (i *oneRowIterator) Err() error       { return nil }
+func (i *oneRowIterator) Close() error     { return nil }
+
+// TestForwardedPathShapes covers every path shape Milo's proxy chain might
+// deliver, with the project carried in user extras as production will.
+func TestForwardedPathShapes(t *testing.T) {
+	const group = "telemetry.miloapis.com"
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{"already trimmed", "/v1/loki/api/v1/query_range"},
+		{"apis prefix retained", "/apis/" + group + "/v1/loki/api/v1/query_range"},
+		{"full project path retained",
+			"/projects/proj-abc/control-plane/apis/" + group + "/v1/loki/api/v1/query_range"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &recordingStore{}
+			cfg := queryapi.DefaultConfig()
+			srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), store, cfg))
+			defer srv.Close()
+
+			req, err := http.NewRequest(http.MethodGet,
+				srv.URL+tc.path+`?query={service_name="waf"}&limit=5`, nil)
+			if err != nil {
+				t.Fatalf("build request: %v", err)
+			}
+			// Escaped extras keys, as kube-aggregator sets them. Assigned
+			// directly because Header.Set canonicalises.
+			req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-type"] = []string{"Project"}
+			req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-name"] = []string{"proj-abc"}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("do request: %v", err)
+			}
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Logf("close response body: %v", err)
+				}
+			}()
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("status = %d, want 200 (path %q): %s", resp.StatusCode, tc.path, body)
+			}
+
+			var payload struct {
+				Status string `json:"status"`
+				Data   struct {
+					Result []struct {
+						Values [][2]string `json:"values"`
+					} `json:"result"`
+				} `json:"data"`
+			}
+			if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if payload.Status != "success" || len(payload.Data.Result) != 1 {
+				t.Fatalf("payload = %+v, want one stream", payload)
+			}
+			if got := payload.Data.Result[0].Values[0][1]; got != "recorded" {
+				t.Errorf("line = %q, want %q", got, "recorded")
+			}
+			if got := store.seen(); got != "proj-abc" {
+				t.Errorf("backend saw project %q, want %q", got, "proj-abc")
+			}
+		})
 	}
 }

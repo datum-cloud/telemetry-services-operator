@@ -24,9 +24,9 @@ var (
 // Middleware resolves the request's project onto the context, rejecting
 // requests it cannot scope. Wrap only tenant-facing routes: probes and
 // /metrics carry no identity.
-func Middleware(logger *slog.Logger, next http.Handler) http.Handler {
+func Middleware(logger *slog.Logger, trustHeader bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		id, source, ok := Resolve(r)
+		id, source, ok := Resolve(r, trustHeader)
 		if !ok {
 			projectSourceTotal.WithLabelValues("none").Inc()
 			writeUnauthorized(w)

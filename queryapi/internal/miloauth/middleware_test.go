@@ -27,7 +27,7 @@ func TestMiddlewarePassesProjectThrough(t *testing.T) {
 	r.Header["X-Project-Id"] = []string{"proj-abc"}
 	rec := httptest.NewRecorder()
 
-	miloauth.Middleware(slog.New(slog.DiscardHandler), next).ServeHTTP(rec, r)
+	miloauth.Middleware(slog.New(slog.DiscardHandler), true, next).ServeHTTP(rec, r)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -44,7 +44,7 @@ func TestMiddlewareRejectsWithoutProject(t *testing.T) {
 	r := httptest.NewRequest(http.MethodGet, "/v1/loki/api/v1/query", nil)
 	rec := httptest.NewRecorder()
 
-	miloauth.Middleware(slog.New(slog.DiscardHandler), next).ServeHTTP(rec, r)
+	miloauth.Middleware(slog.New(slog.DiscardHandler), true, next).ServeHTTP(rec, r)
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401", rec.Code)
@@ -62,5 +62,25 @@ func TestMiddlewareRejectsWithoutProject(t *testing.T) {
 	}
 	if body.Status != "error" || body.Error == "" {
 		t.Errorf("body = %+v, want the Loki error envelope", body)
+	}
+}
+
+// TestMiddlewareRejectsUntrustedProjectHeader pins the gate: X-Project-Id is
+// client-controlled, so it must not scope a request unless opted in.
+func TestMiddlewareRejectsUntrustedProjectHeader(t *testing.T) {
+	called := false
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { called = true })
+
+	r := httptest.NewRequest(http.MethodGet, "/v1/loki/api/v1/query", nil)
+	r.Header["X-Project-Id"] = []string{"proj-abc"}
+	rec := httptest.NewRecorder()
+
+	miloauth.Middleware(slog.New(slog.DiscardHandler), false, next).ServeHTTP(rec, r)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+	if called {
+		t.Error("next handler ran despite an untrusted project header")
 	}
 }

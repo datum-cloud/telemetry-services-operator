@@ -15,6 +15,7 @@ spec:
       labels:
         app.kubernetes.io/name: queryapi
     spec:
+      automountServiceAccountToken: false
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -28,6 +29,8 @@ spec:
             # certificate volume once it can.
             - --storage=fake
             - --addr=:8080
+            # --trust-project-header is deliberately absent: X-Project-Id is
+            # client-controlled, so only the proxy-set identity is trusted here.
           ports:
             - name: http
               containerPort: 8080

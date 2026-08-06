@@ -49,3 +49,5 @@ func (r *statusRecorder) WriteHeader(status int) {
 	r.status = status
 	r.ResponseWriter.WriteHeader(status)
 }
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }

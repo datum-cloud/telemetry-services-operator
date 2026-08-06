@@ -24,6 +24,7 @@ Metric (Prometheus-shaped) endpoints return 501 on both backends.
 | `--max-limit` | `5000` |
 | `--read-header-timeout` | `5s` |
 | `--idle-timeout` | `120s` |
+| `--trust-project-header` | `false` |
 
 ## ClickHouse environment
 
@@ -46,7 +47,9 @@ Every request must resolve to a project or it is rejected with 401. The
 project is read from forwarded identity, in order: the
 `iam.miloapis.com/parent-name` user extra (only when
 `iam.miloapis.com/parent-type` is `Project`), then `X-Project-Id`, then
-`/projects/{id}/control-plane/` in the path. The
+`/projects/{id}/control-plane/` in the path. The `X-Project-Id` source is off
+unless `--trust-project-header` is set, because nothing in the proxy chain
+strips it and so it is client-controlled. The
 `queryapi_project_source_total` metric reports which source is in use; once
 confirmed in a real deployment, the unused sources should be deleted.
 
@@ -58,5 +61,6 @@ unscoped query.
 ```sh
 task queryapi:test
 task queryapi:lint
-task queryapi:run   # then: curl -H 'X-Project-Id: p' 'localhost:8080/v1/loki/api/v1/label'
+go run ./cmd --trust-project-header   # the header source is off by default
+# then: curl -H 'X-Project-Id: p' 'localhost:8080/v1/loki/api/v1/label'
 ```

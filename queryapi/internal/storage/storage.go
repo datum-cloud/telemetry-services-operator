@@ -81,6 +81,8 @@ type Row struct {
 
 // LogIterator streams rows. It mirrors database/sql's Next/Err/Close so a
 // ClickHouse driver result wraps without intermediate buffering.
+// Callers needing Loki's grouped envelope necessarily buffer; LogQuery.Limit
+// bounds that.
 type LogIterator interface {
 	Next() bool
 	Row() Row
@@ -93,6 +95,10 @@ type LogStore interface {
 	QueryLogs(ctx context.Context, q LogQuery) (LogIterator, error)
 	LabelNames(ctx context.Context, tr TimeRange) ([]string, error)
 	LabelValues(ctx context.Context, label string, tr TimeRange) ([]string, error)
+
+	// Series is called once per match[] selector; the handler unions and dedupes
+	// the results.
 	Series(ctx context.Context, matchers []logql.LabelMatcher, tr TimeRange) ([]LabelSet, error)
+
 	Ping(ctx context.Context) error
 }

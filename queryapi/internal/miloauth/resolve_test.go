@@ -12,12 +12,13 @@ import (
 
 func TestResolve(t *testing.T) {
 	cases := []struct {
-		name       string
-		path       string
-		headers    map[string]string
-		wantID     string
-		wantSource string
-		wantOK     bool
+		name        string
+		path        string
+		headers     map[string]string
+		trustHeader bool
+		wantID      string
+		wantSource  string
+		wantOK      bool
 	}{
 		{
 			name: "user extras with project parent",
@@ -38,10 +39,17 @@ func TestResolve(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:    "plain project header",
+			name:        "plain project header",
+			path:        "/v1/loki/api/v1/query",
+			headers:     map[string]string{"X-Project-Id": "proj-def"},
+			trustHeader: true,
+			wantID:      "proj-def", wantSource: "header", wantOK: true,
+		},
+		{
+			name:    "project header ignored when untrusted",
 			path:    "/v1/loki/api/v1/query",
 			headers: map[string]string{"X-Project-Id": "proj-def"},
-			wantID:  "proj-def", wantSource: "header", wantOK: true,
+			wantOK:  false,
 		},
 		{
 			name:   "path",
@@ -54,10 +62,11 @@ func TestResolve(t *testing.T) {
 			wantOK: false,
 		},
 		{
-			name:    "invalid id rejected",
-			path:    "/v1/loki/api/v1/query",
-			headers: map[string]string{"X-Project-Id": "Not A Project!"},
-			wantOK:  false,
+			name:        "invalid id rejected",
+			path:        "/v1/loki/api/v1/query",
+			headers:     map[string]string{"X-Project-Id": "Not A Project!"},
+			trustHeader: true,
+			wantOK:      false,
 		},
 		{
 			name: "extras take precedence over header",
@@ -65,9 +74,10 @@ func TestResolve(t *testing.T) {
 			headers: map[string]string{
 				"X-Remote-Extra-Iam.miloapis.com%2Fparent-type": "Project",
 				"X-Remote-Extra-Iam.miloapis.com%2Fparent-name": "from-extras",
-				"X-Project-Id":                                  "from-header",
+				"X-Project-Id": "from-header",
 			},
-			wantID: "from-extras", wantSource: "remote-extra", wantOK: true,
+			trustHeader: true,
+			wantID:      "from-extras", wantSource: "remote-extra", wantOK: true,
 		},
 	}
 
@@ -79,7 +89,7 @@ func TestResolve(t *testing.T) {
 				r.Header[k] = []string{v}
 			}
 
-			id, source, ok := miloauth.Resolve(r)
+			id, source, ok := miloauth.Resolve(r, tc.trustHeader)
 			if ok != tc.wantOK {
 				t.Fatalf("ok = %v, want %v (id=%q source=%q)", ok, tc.wantOK, id, source)
 			}

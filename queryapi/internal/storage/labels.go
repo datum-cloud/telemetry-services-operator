@@ -19,10 +19,25 @@ var columns = map[string]string{
 	"trace_id":     "TraceId",
 }
 
-// Resolve maps a LogQL label to its storage location.
+// resourceAttributes are labels backed by ResourceAttributes rather than
+// LogAttributes -- resource identity is resource-scoped in the logs table.
+var resourceAttributes = map[string]bool{
+	"resource_name": true,
+}
+
+// Resolve maps a LogQL label to its storage location. Unknown labels resolve to
+// LabelLogAttribute.
+//
+// The returned target is a map KEY for attribute kinds: bind it as a query
+// parameter, never concatenate it into SQL text. LogQL label names cannot
+// contain dots, so OTel keys like http.method are matched with underscores and
+// the SQL layer owes the reverse mapping.
 func Resolve(label string) (target string, kind LabelKind) {
 	if col, ok := columns[label]; ok {
 		return col, LabelColumn
+	}
+	if resourceAttributes[label] {
+		return label, LabelResourceAttribute
 	}
 	return label, LabelLogAttribute
 }

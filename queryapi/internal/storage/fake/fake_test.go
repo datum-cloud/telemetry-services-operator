@@ -115,6 +115,9 @@ func TestForwardReturnsOldestFirst(t *testing.T) {
 			t.Fatalf("row %d is older than row %d; forward must ascend", i, i-1)
 		}
 	}
+	if len(rows) != 10 {
+		t.Fatalf("got %d rows, want 10", len(rows))
+	}
 	tr := testRange()
 	if rows[0].Timestamp.Sub(tr.Start) > time.Minute {
 		t.Errorf("oldest row is %v after Start", rows[0].Timestamp.Sub(tr.Start))

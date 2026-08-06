@@ -11,6 +11,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -47,8 +48,43 @@ func NewHandler(logger *slog.Logger, store storage.LogStore, cfg Config) http.Ha
 	route(tenant, "GET /v1/api/v1/labels", h.promLabelNames)
 	route(tenant, "GET /v1/api/v1/label/{name}/values", h.promLabelValues)
 
-	mux.Handle("/", miloauth.Middleware(logger, tenant))
+	mux.Handle("/", miloauth.Middleware(logger, cfg.TrustProjectHeader, stripProxyPrefixes(tenant)))
 	return mux
+}
+
+const (
+	projectsPrefix   = "/projects/"
+	controlPlaneMark = "/control-plane"
+	apisPrefix       = "/apis/"
+)
+
+// stripProxyPrefixes trims the prefixes Milo's proxy chain may leave on the
+// path, so the tenant routes match whichever shape actually arrives.
+func stripProxyPrefixes(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+
+		if i := strings.Index(path, projectsPrefix); i >= 0 {
+			if j := strings.Index(path[i:], controlPlaneMark+"/"); j >= 0 {
+				path = path[i+j+len(controlPlaneMark):]
+			}
+		}
+		if strings.HasPrefix(path, apisPrefix) {
+			if j := strings.IndexByte(path[len(apisPrefix):], '/'); j >= 0 {
+				path = path[len(apisPrefix)+j:]
+			}
+		}
+
+		if path == r.URL.Path {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		r2 := r.Clone(r.Context())
+		r2.URL.Path = path
+		r2.URL.RawPath = ""
+		next.ServeHTTP(w, r2)
+	})
 }
 
 func route(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
@@ -167,6 +203,7 @@ func (h *handler) lokiLabelNames(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) lokiLabelValues(w http.ResponseWriter, r *http.Request) {
+	// Validation only: the catalogue is not selector-filtered yet.
 	if raw := r.URL.Query().Get("query"); raw != "" {
 		if _, ok := h.parseLogQL(w, raw); !ok {
 			return

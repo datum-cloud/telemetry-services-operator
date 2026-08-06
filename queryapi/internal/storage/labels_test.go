@@ -17,8 +17,9 @@ func TestResolve(t *testing.T) {
 		{"service_name", "ServiceName", storage.LabelColumn},
 		{"severity", "SeverityText", storage.LabelColumn},
 		{"trace_id", "TraceId", storage.LabelColumn},
-		{"resource_name", "resource_name", storage.LabelLogAttribute},
+		{"resource_name", "resource_name", storage.LabelResourceAttribute},
 		{"anything_at_all", "anything_at_all", storage.LabelLogAttribute},
+		{"http_method", "http_method", storage.LabelLogAttribute},
 	}
 
 	for _, tc := range cases {

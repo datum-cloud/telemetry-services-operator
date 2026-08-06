@@ -429,7 +429,7 @@ components:
       in: query
       description: >-
         Relative ("1h", "30m") or absolute timestamp lower bound. Filters
-        ObservedTimestamp. Defaults to 1h before now.
+        Timestamp. Defaults to 1h before now.
       schema:
         type: string
 
@@ -443,18 +443,20 @@ components:
     Limit:
       name: limit
       in: query
+      description: >-
+        Maximum log lines returned. Zero, negative, and unparseable values are
+        coerced to the default rather than rejected.
       schema:
         type: integer
         default: 100
-        maximum: 1000
-        minimum: 1
+        maximum: 5000
 
     Direction:
       name: direction
       in: query
       description: >-
-        Sort order. Only "backward" (most recent first) is supported today;
-        "forward" is rejected with 400.
+        Sort order. `backward` (most recent first) is the default; `forward`
+        returns oldest first.
       schema:
         type: string
         enum: [backward, forward]

@@ -32,6 +32,11 @@ type Config struct {
 	// are clamped, not rejected, matching Loki.
 	DefaultLimit int
 	MaxLimit     int
+
+	// TrustProjectHeader allows the X-Project-Id header as a project source.
+	// Off by default: unlike X-Remote-*, nothing in the proxy chain strips it,
+	// so it is client-controlled. Intended for local development only.
+	TrustProjectHeader bool
 }
 
 // DefaultConfig returns a Config with production-reasonable defaults.
@@ -75,4 +80,6 @@ func RegisterFlags(fs *flag.FlagSet, c *Config) {
 	fs.DurationVar(&c.QueryTimeout, "query-timeout", def.QueryTimeout, "maximum duration of a single storage query")
 	fs.IntVar(&c.DefaultLimit, "default-limit", def.DefaultLimit, "default maximum log lines returned")
 	fs.IntVar(&c.MaxLimit, "max-limit", def.MaxLimit, "hard ceiling on log lines returned")
+	fs.BoolVar(&c.TrustProjectHeader, "trust-project-header", def.TrustProjectHeader,
+		"trust the X-Project-Id header as a project source (local development only)")
 }
