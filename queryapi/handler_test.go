@@ -19,6 +19,7 @@ import (
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 
 	"go.datum.net/o11y/queryapi"
+	"go.datum.net/o11y/queryapi/internal/storage/fake"
 )
 
 // loadSpec parses and validates openapi.yaml, then builds a router that maps
@@ -41,18 +42,12 @@ func loadSpec(t *testing.T) routers.Router {
 	return router
 }
 
-// TestHandlersConformToSpec drives every documented endpoint against the
-// stub handler and validates the response against openapi.yaml. Every
-// handler currently returns 501, which isn't listed under any operation's
-// explicit status codes — it's covered by the spec's "default" response
-// (added for exactly this reason), so this test already checks the one
-// thing that's true today: every response, success or not, is Error-shaped
-// where the spec says it should be. As handlers grow real behavior, the same
-// test starts checking the 200 schemas too, with no changes needed here.
+// TestHandlersConformToSpec drives every documented endpoint and validates the response against openapi.yaml.
 func TestHandlersConformToSpec(t *testing.T) {
 	router := loadSpec(t)
 
-	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler)))
+	cfg := queryapi.DefaultConfig()
+	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
 	defer srv.Close()
 
 	// The spec's server entry is a template kube-aggregator fills in at
@@ -103,6 +98,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 			if tc.form != nil {
 				httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
+			httpReq.Header.Set("X-Project-Id", "test-project")
 
 			resp, err := http.DefaultClient.Do(httpReq)
 			if err != nil {
@@ -151,5 +147,25 @@ func TestHandlersConformToSpec(t *testing.T) {
 				t.Fatalf("response for %s did not conform to openapi.yaml: %v\nbody: %s", tc.path, err, respBody)
 			}
 		})
+	}
+}
+
+func TestUnscopedRequestIsUnauthorized(t *testing.T) {
+	cfg := queryapi.DefaultConfig()
+	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/v1/loki/api/v1/query?query=%7Bservice_name%3D%22waf%22%7D")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Logf("close response body: %v", err)
+		}
+	}()
+
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", resp.StatusCode)
 	}
 }

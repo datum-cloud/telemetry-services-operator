@@ -7,27 +7,30 @@ import (
 	"time"
 )
 
-// Config holds the query API server's runtime configuration. It is
-// deliberately small today — the addr and timeouts needed to run an
-// http.Server — and is expected to grow (ClickHouse DSN, milo-api trust
-// settings, tracing exporter endpoint) as the stub handlers gain real
-// implementations.
+// Config is the query API server's runtime configuration.
 //
-// There is deliberately no WriteTimeout here. http.Server.WriteTimeout is an
-// absolute deadline from when the request is read, applied to every write on
-// the connection — it would silently truncate /v1/logs/tail, which is a
-// long-lived stream by design. ReadHeaderTimeout bounds the slow-header
-// attack surface without touching response duration.
+// There is deliberately no WriteTimeout: it is an absolute deadline from when
+// the request is read, so it would truncate long-lived streaming responses.
+// ReadHeaderTimeout bounds slow-header attacks without touching response
+// duration.
 type Config struct {
-	// Addr is the address the HTTP server listens on, e.g. ":8080".
-	Addr string
-
-	// ReadHeaderTimeout bounds how long reading request headers may take.
+	Addr              string
 	ReadHeaderTimeout time.Duration
+	IdleTimeout       time.Duration
 
-	// IdleTimeout bounds how long a keep-alive connection may sit idle
-	// between requests.
-	IdleTimeout time.Duration
+	// Storage selects the backend: "fake" or "clickhouse".
+	Storage string
+
+	// FakeRate is the fake backend's lines per second.
+	FakeRate float64
+
+	// QueryTimeout bounds a single storage call.
+	QueryTimeout time.Duration
+
+	// DefaultLimit and MaxLimit bound returned rows. Requests above MaxLimit
+	// are clamped, not rejected, matching Loki.
+	DefaultLimit int
+	MaxLimit     int
 }
 
 // DefaultConfig returns a Config with production-reasonable defaults.
@@ -36,11 +39,15 @@ func DefaultConfig() Config {
 		Addr:              ":8080",
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		Storage:           "fake",
+		FakeRate:          2,
+		QueryTimeout:      30 * time.Second,
+		DefaultLimit:      100,
+		MaxLimit:          5000,
 	}
 }
 
-// RegisterFlags binds Config's fields to fs, defaulting to DefaultConfig's
-// values where c is the zero value.
+// RegisterFlags binds Config's fields to fs.
 func RegisterFlags(fs *flag.FlagSet, c *Config) {
 	def := DefaultConfig()
 	fs.StringVar(&c.Addr, "addr", def.Addr, "address to serve the query API on")
@@ -48,4 +55,9 @@ func RegisterFlags(fs *flag.FlagSet, c *Config) {
 		"maximum duration for reading request headers")
 	fs.DurationVar(&c.IdleTimeout, "idle-timeout", def.IdleTimeout,
 		"maximum amount of time to wait for the next request on a keep-alive connection")
+	fs.StringVar(&c.Storage, "storage", def.Storage, "storage backend: fake or clickhouse")
+	fs.Float64Var(&c.FakeRate, "fake-rate", def.FakeRate, "synthetic log lines per second (fake backend)")
+	fs.DurationVar(&c.QueryTimeout, "query-timeout", def.QueryTimeout, "maximum duration of a single storage query")
+	fs.IntVar(&c.DefaultLimit, "default-limit", def.DefaultLimit, "default maximum log lines returned")
+	fs.IntVar(&c.MaxLimit, "max-limit", def.MaxLimit, "hard ceiling on log lines returned")
 }
