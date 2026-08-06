@@ -29,9 +29,9 @@ func Parse(raw string) (*Query, error) {
 			"a query must be a stream selector, e.g. {service_name=\"envoy-gateway\"}")
 	}
 
-	end := strings.IndexByte(s, '}')
-	if end < 0 {
-		return nil, errors.New("logql: unclosed stream selector")
+	end, err := closingBrace(s)
+	if err != nil {
+		return nil, err
 	}
 
 	matchers, err := parseMatchers(s[1:end])
@@ -47,6 +47,23 @@ func Parse(raw string) (*Query, error) {
 		return nil, err
 	}
 	return &Query{Matchers: matchers, Filters: filters}, nil
+}
+
+// closingBrace returns the index of the selector's closing brace, ignoring
+// braces inside quoted values -- regex quantifiers like [0-9]{2} contain one.
+func closingBrace(s string) (int, error) {
+	inQuote := false
+	for i := 1; i < len(s); i++ {
+		switch {
+		case inQuote && s[i] == '\\':
+			i++
+		case s[i] == '"':
+			inQuote = !inQuote
+		case s[i] == '}' && !inQuote:
+			return i, nil
+		}
+	}
+	return 0, errors.New("logql: unclosed stream selector")
 }
 
 func parseMatchers(body string) ([]LabelMatcher, error) {

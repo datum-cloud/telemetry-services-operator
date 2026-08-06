@@ -24,6 +24,9 @@ func TestParseAccepts(t *testing.T) {
 		{"value with comma", `{resource_name="a,b"}`, 1, 0},
 		{"escaped quote in value", `{resource_name="say \"hi\""}`, 1, 0},
 		{"extra whitespace", `  {  service_name = "waf" }   |=  "x"  `, 1, 1},
+		{"regex quantifier braces", `{service_name=~"gw-[0-9]{2}"}`, 1, 0},
+		{"literal brace in value", `{resource_name="a}b"}`, 1, 0},
+		{"brace in value with filter", `{resource_name="a}b"} |= "x"`, 1, 1},
 	}
 
 	for _, tc := range cases {
@@ -58,7 +61,7 @@ func TestParseRejects(t *testing.T) {
 		{"line_format", `{service_name="waf"} | line_format "{{.x}}"`, "not supported"},
 		{"label_format", `{service_name="waf"} | label_format x=y`, "not supported"},
 		{"unclosed selector", `{service_name="waf"`, "unclosed"},
-		{"unterminated string", `{service_name="waf}`, "unterminated"},
+		{"unterminated string", `{service_name="waf}`, "unclosed"},
 		{"missing operator", `{service_name}`, "expected"},
 		{"bad label regexp", `{service_name=~"("}`, "invalid regexp"},
 		{"bad filter regexp", `{service_name="waf"} |~ "("`, "invalid regexp"},
