@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 // Package fake generates synthetic logs so the query API is useful before
-// ClickHouse ingest is healthy. Rows are a pure function of their timestamp,
-// so results are identical across restarts and replicas.
+// ClickHouse ingest is healthy. Rows are a pure function of their timestamp
+// and the configured rate, so results are identical across restarts and
+// across replicas sharing one rate.
 package fake
 
 import (
@@ -65,6 +66,9 @@ func New(ratePerSecond float64) *Store {
 func (s *Store) QueryLogs(ctx context.Context, q storage.LogQuery) (storage.LogIterator, error) {
 	if _, ok := miloauth.ProjectID(ctx); !ok {
 		return nil, storage.ErrNoProject
+	}
+	if q.Limit <= 0 {
+		return nil, storage.ErrInvalidLimit
 	}
 	return newIterator(ctx, s.interval, q), nil
 }

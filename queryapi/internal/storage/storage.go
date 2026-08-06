@@ -24,6 +24,10 @@ var (
 	// Backends check this themselves so a handler bug cannot issue an
 	// unscoped query.
 	ErrNoProject = errors.New("storage: no project on request context")
+
+	// ErrInvalidLimit is returned for a non-positive Limit. Backends reject it
+	// rather than treating it as unbounded.
+	ErrInvalidLimit = errors.New("storage: limit must be greater than zero")
 )
 
 // TimeRange is a half-open interval [Start, End).
@@ -43,9 +47,12 @@ const (
 // LogQuery is a log query with all constraints pushed down. Callers must not
 // re-apply Limit or Direction to the results.
 type LogQuery struct {
-	Matchers  []logql.LabelMatcher
-	Filters   []logql.LineFilter
-	Range     TimeRange
+	Matchers []logql.LabelMatcher
+	Filters  []logql.LineFilter
+	Range    TimeRange
+
+	// Limit must be > 0; backends return ErrInvalidLimit for zero rather than
+	// scanning an unbounded window.
 	Limit     int
 	Direction Direction
 }

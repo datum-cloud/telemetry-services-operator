@@ -218,6 +218,15 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
+func TestRejectsNonPositiveLimit(t *testing.T) {
+	s := fake.New(2)
+	for _, limit := range []int{0, -1} {
+		if _, err := s.QueryLogs(testCtx(), query(nil, nil, limit, storage.DirectionBackward)); !errors.Is(err, storage.ErrInvalidLimit) {
+			t.Errorf("QueryLogs with limit %d = %v, want ErrInvalidLimit", limit, err)
+		}
+	}
+}
+
 func TestPing(t *testing.T) {
 	if err := fake.New(2).Ping(context.Background()); err != nil {
 		t.Fatalf("Ping: %v", err)
