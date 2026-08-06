@@ -76,15 +76,15 @@ func (h *handler) withTimeout(r *http.Request) (context.Context, context.CancelF
 	return context.WithTimeout(r.Context(), h.cfg.QueryTimeout)
 }
 
-// timeRange resolves start/end, defaulting to the last hour.
+// timeRange resolves start/end, defaulting to the last hour ending at end.
 func (h *handler) timeRange(w http.ResponseWriter, r *http.Request) (storage.TimeRange, bool) {
 	now := time.Now().UTC()
-	start, err := parseTime(r.URL.Query().Get("start"), now, now.Add(-time.Hour))
+	end, err := parseTime(r.URL.Query().Get("end"), now, now)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return storage.TimeRange{}, false
 	}
-	end, err := parseTime(r.URL.Query().Get("end"), now, now)
+	start, err := parseTime(r.URL.Query().Get("start"), now, end.Add(-time.Hour))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return storage.TimeRange{}, false
@@ -188,14 +188,6 @@ func (h *handler) lokiLabelValues(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler) lokiSeries(w http.ResponseWriter, r *http.Request) {
-	var matchers []logql.LabelMatcher
-	for _, match := range r.URL.Query()["match[]"] {
-		q, ok := h.parseLogQL(w, match)
-		if !ok {
-			return
-		}
-		matchers = append(matchers, q.Matchers...)
-	}
 	tr, ok := h.timeRange(w, r)
 	if !ok {
 		return
@@ -203,14 +195,26 @@ func (h *handler) lokiSeries(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := h.withTimeout(r)
 	defer cancel()
 
-	series, err := h.store.Series(ctx, matchers, tr)
-	if err != nil {
-		h.writeStorageError(w, err)
-		return
-	}
-	out := make([]map[string]string, 0, len(series))
-	for _, ls := range series {
-		out = append(out, ls)
+	// Repeated match[] selectors are a union, as in Loki -- one store call per
+	// selector, deduped on the way out.
+	seen := map[string]bool{}
+	out := make([]map[string]string, 0)
+	for _, match := range r.URL.Query()["match[]"] {
+		q, ok := h.parseLogQL(w, match)
+		if !ok {
+			return
+		}
+		series, err := h.store.Series(ctx, q.Matchers, tr)
+		if err != nil {
+			h.writeStorageError(w, err)
+			return
+		}
+		for _, ls := range series {
+			if key := ls.Key(); !seen[key] {
+				seen[key] = true
+				out = append(out, ls)
+			}
+		}
 	}
 	writeData(w, out)
 }
@@ -252,6 +256,9 @@ func (h *handler) writeStorageError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, storage.ErrNotImplemented):
 		writeError(w, http.StatusNotImplemented, "not implemented for the configured storage backend")
+	case errors.Is(err, context.Canceled):
+		// Client disconnected; 499 mirrors Loki/nginx. Not an error worth paging on.
+		writeError(w, 499, "client cancelled request")
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(w, http.StatusGatewayTimeout, "query timed out")
 	default:

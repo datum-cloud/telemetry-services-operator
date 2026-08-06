@@ -22,10 +22,19 @@ func parseTime(raw string, now, fallback time.Time) (time.Time, error) {
 		return t.UTC(), nil
 	}
 	if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
-		if len(raw) > 12 { // nanoseconds
+		switch len(raw) {
+		case 10, 11:
+			return time.Unix(n, 0).UTC(), nil
+		case 13:
+			return time.UnixMilli(n).UTC(), nil
+		case 16:
+			return time.UnixMicro(n).UTC(), nil
+		case 19:
 			return time.Unix(0, n).UTC(), nil
+		default:
+			return time.Time{}, fmt.Errorf(
+				"ambiguous epoch timestamp %q: expected 10 (s), 13 (ms), 16 (us) or 19 (ns) digits", raw)
 		}
-		return time.Unix(n, 0).UTC(), nil
 	}
 	if d, err := time.ParseDuration(raw); err == nil {
 		return now.Add(-d), nil

@@ -62,10 +62,10 @@ func TestHandlersConformToSpec(t *testing.T) {
 		query  string
 		form   url.Values
 	}{
-		{"loki query", http.MethodGet, "/loki/api/v1/query", `query={service_name="foo"}`, nil},
+		{"loki query", http.MethodGet, "/loki/api/v1/query", `query={service_name="waf"}`, nil},
 		{
 			"loki query_range", http.MethodGet, "/loki/api/v1/query_range",
-			`query={service_name="foo"}&start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z`, nil,
+			`query={service_name="waf"}&start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z`, nil,
 		},
 		{"loki label names", http.MethodGet, "/loki/api/v1/label", "", nil},
 		{"loki label values", http.MethodGet, "/loki/api/v1/label/severity/values", "", nil},

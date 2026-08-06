@@ -28,6 +28,11 @@ func main() {
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
+	if err := cfg.Validate(); err != nil {
+		logger.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
 	store, err := newStore(cfg)
 	if err != nil {
 		logger.Error("configure storage", "error", err)

@@ -22,6 +22,9 @@ func TestParseTime(t *testing.T) {
 		{"relative minutes", "30m", now.Add(-30 * time.Minute), false},
 		{"unix seconds", "1767225600", now, false},
 		{"unix nanos", "1767225600000000000", now, false},
+		{"unix millis", "1767225600000", now, false},
+		{"unix micros", "1767225600000000", now, false},
+		{"ambiguous digit count", "17672256", time.Time{}, true},
 		{"garbage", "not-a-time", time.Time{}, true},
 	}
 

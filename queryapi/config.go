@@ -4,6 +4,7 @@ package queryapi
 
 import (
 	"flag"
+	"fmt"
 	"time"
 )
 
@@ -45,6 +46,20 @@ func DefaultConfig() Config {
 		DefaultLimit:      100,
 		MaxLimit:          5000,
 	}
+}
+
+// Validate reports whether the configured limits are usable.
+func (c Config) Validate() error {
+	if c.DefaultLimit <= 0 {
+		return fmt.Errorf("default-limit must be greater than zero, got %d", c.DefaultLimit)
+	}
+	if c.MaxLimit <= 0 {
+		return fmt.Errorf("max-limit must be greater than zero, got %d", c.MaxLimit)
+	}
+	if c.DefaultLimit > c.MaxLimit {
+		return fmt.Errorf("default-limit %d exceeds max-limit %d", c.DefaultLimit, c.MaxLimit)
+	}
+	return nil
 }
 
 // RegisterFlags binds Config's fields to fs.
