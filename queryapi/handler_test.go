@@ -226,8 +226,11 @@ func TestSeriesUnionsSelectors(t *testing.T) {
 	if len(dup) != len(single) {
 		t.Errorf("repeated identical selector returned %d series, want %d (deduped)", len(dup), len(single))
 	}
-	if len(single) == 0 {
-		t.Error("single waf selector returned no series; the test would be vacuous")
+	// > 1, not just > 0: with a single waf label set the dedupe comparison
+	// above would also pass for a key coarser than LabelSet.Key(), which
+	// would silently collapse distinct severity/resource combinations.
+	if len(single) < 2 {
+		t.Fatalf("single waf selector returned %d series, want at least 2 distinct label sets", len(single))
 	}
 
 	if code, _ := get(t, ""); code != http.StatusBadRequest {
