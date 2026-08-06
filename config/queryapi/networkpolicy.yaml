@@ -1,0 +1,25 @@
+# queryapi trusts the identity headers on inbound requests, which is only
+# sound while the Milo proxy is the sole client -- it strips and re-sets
+# X-Remote-* from the identity it authenticated. This policy is what makes
+# that true. Verifying the requestheader client CA would remove the
+# dependence on network topology; until then, do not widen this.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: queryapi
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: queryapi
+  policyTypes:
+    - Ingress
+  ingress:
+    # PLACEHOLDER -- the consumer must patch this to select the namespace
+    # running milo-apiserver.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: PLACEHOLDER-milo-namespace
+      ports:
+        - protocol: TCP
+          port: 8080
