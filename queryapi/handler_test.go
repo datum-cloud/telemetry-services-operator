@@ -381,3 +381,69 @@ func TestForwardedPathShapes(t *testing.T) {
 		})
 	}
 }
+
+// TestCraftedProjectPathIsNotAnIdentity pins the anchoring: a /projects/
+// segment appearing later in the path is client-controlled data, and must
+// never become the project a query is scoped to.
+func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
+	const crafted = "/v1/loki/api/v1/label/projects/evil-corp/control-plane/v1/loki/api/v1/query"
+
+	t.Run("no identity at all", func(t *testing.T) {
+		store := &recordingStore{}
+		srv := httptest.NewServer(queryapi.NewHandler(
+			slog.New(slog.DiscardHandler), store, queryapi.DefaultConfig()))
+		defer srv.Close()
+
+		resp, err := http.Get(srv.URL + crafted + `?query={service_name="waf"}&limit=1`)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Logf("close response body: %v", err)
+			}
+		}()
+
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("status = %d, want 401", resp.StatusCode)
+		}
+		if got := store.seen(); got != "" {
+			t.Errorf("backend saw project %q, want none", got)
+		}
+	})
+
+	t.Run("identity present, crafted path ignored", func(t *testing.T) {
+		store := &recordingStore{}
+		srv := httptest.NewServer(queryapi.NewHandler(
+			slog.New(slog.DiscardHandler), store, queryapi.DefaultConfig()))
+		defer srv.Close()
+
+		req, err := http.NewRequest(http.MethodGet,
+			srv.URL+crafted+`?query={service_name="waf"}&limit=1`, nil)
+		if err != nil {
+			t.Fatalf("build request: %v", err)
+		}
+		req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-type"] = []string{"Project"}
+		req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-name"] = []string{"proj-abc"}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("do request: %v", err)
+		}
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Logf("close response body: %v", err)
+			}
+		}()
+
+		// The crafted suffix is not a route once anchoring stops the strip, so
+		// a 404 is correct. What must never happen is a 200 scoped to
+		// evil-corp, or the backend seeing that project at all.
+		if got := store.seen(); got == "evil-corp" {
+			t.Fatalf("backend saw project %q from a crafted path", got)
+		}
+		if resp.StatusCode == http.StatusOK && store.seen() != "proj-abc" {
+			t.Errorf("served 200 for project %q, want proj-abc", store.seen())
+		}
+	})
+}

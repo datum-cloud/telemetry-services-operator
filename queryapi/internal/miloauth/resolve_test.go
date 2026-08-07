@@ -57,6 +57,11 @@ func TestResolve(t *testing.T) {
 			wantID: "proj-ghi", wantSource: "path", wantOK: true,
 		},
 		{
+			name:   "crafted mid-path projects segment is not an identity",
+			path:   "/v1/loki/api/v1/label/projects/evil-corp/control-plane/v1/loki/api/v1/query",
+			wantOK: false,
+		},
+		{
 			name:   "nothing to resolve",
 			path:   "/v1/loki/api/v1/query",
 			wantOK: false,

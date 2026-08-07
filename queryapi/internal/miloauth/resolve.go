@@ -80,12 +80,14 @@ func fromProjectHeader(r *http.Request) string {
 	return r.Header.Get(projectHeader)
 }
 
+// fromPath reads the project from the path prefix Milo's router writes. The
+// prefix must be anchored: a /projects/ segment elsewhere in the path is
+// client-controlled data, not an identity.
 func fromPath(r *http.Request) string {
-	i := strings.Index(r.URL.Path, projectsSegment)
-	if i < 0 {
+	if !strings.HasPrefix(r.URL.Path, projectsSegment) {
 		return ""
 	}
-	tail := r.URL.Path[i+len(projectsSegment):]
+	tail := r.URL.Path[len(projectsSegment):]
 	slash := strings.IndexByte(tail, '/')
 	if slash < 0 || !strings.HasPrefix(tail[slash:], controlPlaneSeg+"/") {
 		return ""

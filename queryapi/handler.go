@@ -64,9 +64,11 @@ func stripProxyPrefixes(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 
-		if i := strings.Index(path, projectsPrefix); i >= 0 {
-			if j := strings.Index(path[i:], controlPlaneMark+"/"); j >= 0 {
-				path = path[i+j+len(controlPlaneMark):]
+		// Anchored: Milo's router writes this prefix at the start of the path.
+		// Anywhere else it is client-controlled and must not be stripped.
+		if strings.HasPrefix(path, projectsPrefix) {
+			if j := strings.Index(path, controlPlaneMark+"/"); j >= 0 {
+				path = path[j+len(controlPlaneMark):]
 			}
 		}
 		if strings.HasPrefix(path, apisPrefix) {
