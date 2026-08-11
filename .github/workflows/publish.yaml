@@ -78,28 +78,15 @@ jobs:
       image-overlays: config/clickhouse-migrations
     secrets: inherit
 
-  publish-edge-collectors-kustomize:
+  publish-collectors-kustomize:
     permissions:
       id-token: write
       contents: read
       packages: write
     uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
     with:
-      bundle-name: ghcr.io/milo-os/o11y/edge-collectors-kustomize
-      bundle-path: config/edge-collectors
+      bundle-name: ghcr.io/milo-os/o11y/collectors-kustomize
+      bundle-path: config/collectors
       image-name: ghcr.io/milo-os/o11y/otelcol
-      image-overlays: config/edge-collectors
-    secrets: inherit
-
-  publish-o11y-sink-kustomize:
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
-    with:
-      bundle-name: ghcr.io/milo-os/o11y/o11y-sink-kustomize
-      bundle-path: config/o11y-sink
-      image-name: ghcr.io/milo-os/o11y/otelcol
-      image-overlays: config/o11y-sink
+      image-overlays: config/collectors
     secrets: inherit

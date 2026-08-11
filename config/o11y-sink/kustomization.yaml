@@ -1,7 +1,0 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-
-# The collector binds to a consumer and ClickHouse owned by the deploying
-# platform. No namespace here: the consumer sets targetNamespace.
-resources:
-  - collector.yaml
