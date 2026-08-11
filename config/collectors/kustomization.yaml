@@ -5,7 +5,7 @@ namespace: o11y-system
 
 labels:
   - pairs:
-      app.kubernetes.io/part-of: o11y
+      app.kubernetes.io/part-of: o11y-system
     includeTemplates: true
 
 resources:
