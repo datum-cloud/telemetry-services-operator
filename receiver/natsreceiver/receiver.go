@@ -21,17 +21,14 @@ import (
 )
 
 // nakRedeliveryDelay is passed to NakWithDelay for retryable (e.g. downstream
-// export) failures. jetstream.Msg.Nak's own doc comment warns it "does not
-// adhere to AckWait or Backoff configured on the consumer and triggers
-// instant redelivery" -- a bare Nak on every failure would spin a message in
-// a tight, backoff-free loop while a transient condition (e.g. ClickHouse
-// briefly unavailable) clears.
+// export) failures. A bare Nak would spin a message in a tight, backoff-free
+// loop while a transient condition (e.g. ClickHouse briefly unavailable) clears.
 const nakRedeliveryDelay = 2 * time.Second
 
-// errUnmarshal wraps a payload-unmarshal failure. Unlike a downstream export
-// failure, redelivering the exact same malformed payload can never succeed,
-// so handleJetStream treats it as non-retryable: it acks (drops) the message
-// instead of nak'ing it into an infinite redelivery loop.
+// errUnmarshal wraps a payload-unmarshal failure. Redelivering the same
+// malformed payload can never succeed, so handleJetStream treats it as
+// non-retryable: it acks (drops) the message instead of nak'ing it into an
+// infinite redelivery loop.
 type errUnmarshal struct {
 	err error
 }
@@ -45,20 +42,18 @@ type natsReceiver struct {
 	signal SignalConfig
 
 	// deliverPayload unmarshals payload into the signal-specific pdata type
-	// and forwards it to whichever consumer.{Logs,Metrics,Traces} this
-	// instance was constructed for. Wraps an unmarshal failure in
-	// &errUnmarshal{} so handleJetStream can distinguish it (non-retryable)
-	// from a downstream forwarding failure (retryable).
+	// and forwards it to this instance's consumer. Wraps an unmarshal failure
+	// in &errUnmarshal{} (non-retryable) to distinguish it from a downstream
+	// forwarding failure (retryable).
 	deliverPayload func(ctx context.Context, payload []byte) error
 
 	conn        *nats.Conn
 	consumeCtx  jetstream.ConsumeContext
 	coreNATSSub *nats.Subscription
 
-	// lastDelivery holds unix-nanosecond timestamps (time.Time.UnixNano) of
-	// the last successful delivery. Written from NATS client delivery
-	// goroutines, read from the OTel SDK's metrics-collection goroutine on
-	// scrape; atomic avoids a mutex for that cross-goroutine access.
+	// lastDelivery holds unix-nanosecond timestamps of the last successful
+	// delivery. Written from NATS delivery goroutines, read on scrape; atomic
+	// avoids a mutex for that cross-goroutine access.
 	lastDelivery      atomic.Int64
 	lastDeliveryGauge metric.Float64ObservableGauge
 	resubscribeCount  metric.Int64Counter
@@ -231,11 +226,9 @@ func (r *natsReceiver) startJetStream(ctx context.Context, conn *nats.Conn) erro
 		return fmt.Errorf("binding to consumer %q on stream %q: %w", r.cfg.ConsumerName, r.cfg.Stream, err)
 	}
 	consumeCtx, err := cons.Consume(r.handleJetStream, jetstream.ConsumeErrHandler(func(_ jetstream.ConsumeContext, err error) {
-		// Consume's own heartbeat/re-pull logic has already recovered by
-		// the time this fires -- it's a signal something happened (e.g. a
-		// consumer leader election), not that delivery is currently
-		// broken. Record it on resubscribeCount so an alert on this metric
-		// can be built if resubscribes become frequent enough to matter.
+		// Consume's own heartbeat/re-pull logic has already recovered by the
+		// time this fires (e.g. after a consumer leader election); record it
+		// in case resubscribes become frequent enough to alert on.
 		r.set.Logger.Warn("nats jetstream consume error, resubscribing", zap.Error(err))
 		r.resubscribeCount.Add(ctx, 1)
 	}))
@@ -248,8 +241,8 @@ func (r *natsReceiver) startJetStream(ctx context.Context, conn *nats.Conn) erro
 }
 
 func (r *natsReceiver) handleCoreNATS(msg *nats.Msg) {
-	// Core NATS has no ack/nak concept -- there's nothing to redeliver even
-	// if delivery fails, so we just log (inside deliver) and move on.
+	// Core NATS has no ack/nak concept, so there's nothing to redeliver even
+	// if delivery fails; deliver just logs and we move on.
 	_ = r.deliver(context.Background(), msg.Data)
 }
 
@@ -264,12 +257,10 @@ func (r *natsReceiver) handleJetStream(msg jetstream.Msg) {
 
 	var unmarshalErr *errUnmarshal
 	if errors.As(err, &unmarshalErr) {
-		// Non-retryable: this exact payload will never unmarshal
-		// successfully no matter how many times it's redelivered. Ack
-		// (drop) it instead of Nak'ing it into an infinite, backoff-free
-		// redelivery loop that would burn CPU and block real traffic
-		// behind it. Logged at Error since this is a deliberate,
-		// visible drop of an unprocessable message.
+		// Non-retryable: this payload will never unmarshal, so ack (drop) it
+		// rather than nak'ing it into an infinite, backoff-free redelivery
+		// loop that would burn CPU and block real traffic. Logged at Error
+		// since this is a deliberate, visible drop of an unprocessable message.
 		r.set.Logger.Error("dropping unprocessable nats jetstream message (data loss)", zap.Error(err))
 		if ackErr := msg.Ack(); ackErr != nil {
 			r.set.Logger.Error("acking unprocessable nats jetstream message", zap.Error(ackErr))
@@ -278,9 +269,8 @@ func (r *natsReceiver) handleJetStream(msg jetstream.Msg) {
 	}
 
 	// Retryable (e.g. a downstream export failure -- ClickHouse might
-	// recover). NakWithDelay so JetStream redelivers instead of silently
-	// losing the message, without the instant-redelivery tight loop a bare
-	// Nak would cause.
+	// recover). NakWithDelay redelivers without the tight loop a bare Nak
+	// would cause.
 	if nakErr := msg.NakWithDelay(nakRedeliveryDelay); nakErr != nil {
 		r.set.Logger.Error("nacking nats jetstream message", zap.Error(nakErr))
 	}
@@ -293,7 +283,7 @@ func (r *natsReceiver) deliver(ctx context.Context, payload []byte) error {
 		if errors.As(err, &unmarshalErr) {
 			r.set.Logger.Error("unmarshaling nats payload", zap.Error(err))
 		} else {
-			r.set.Logger.Error("forwarding logs to next consumer", zap.Error(err))
+			r.set.Logger.Error("forwarding to next consumer", zap.Error(err))
 		}
 		return err
 	}

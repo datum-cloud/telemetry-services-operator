@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: queryapi
+  labels:
+    app.kubernetes.io/name: queryapi
+spec:
+  selector:
+    app.kubernetes.io/name: queryapi
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
