@@ -88,11 +88,11 @@ func loadClientTLSConfig(certFile, keyFile, caFile string) (*tls.Config, error) 
 	}, nil
 }
 
-// ensureDatabaseExists creates cfg.database if it doesn't already exist,
-// e.g. on a brand-new ClickHouse instance. It connects without pinning the
-// session to that database -- clickhouse-go validates Auth.Database against
-// the server at connect time, so opening a connection already scoped to a
-// not-yet-created database fails before any CREATE DATABASE can run.
+// ensureDatabaseExists creates cfg.database if it doesn't already exist, e.g.
+// on a brand-new ClickHouse instance. It connects without pinning the session
+// to that database: clickhouse-go validates Auth.Database at connect time, so
+// a connection already scoped to a not-yet-created database would fail before
+// any CREATE DATABASE could run.
 func ensureDatabaseExists(cfg config, tlsConfig *tls.Config) (err error) {
 	bootstrapDB := clickhousego.OpenDB(&clickhousego.Options{
 		Addr: []string{fmt.Sprintf("%s:%s", cfg.host, cfg.port)},
@@ -120,11 +120,9 @@ func applyMigrations(db *sql.DB, cfg config) (uint, bool, error) {
 	driver, err := chmigrate.WithInstance(db, &chmigrate.Config{
 		DatabaseName:    cfg.database,
 		MigrationsTable: cfg.migrationsTable,
-		// ClickHouse rejects multiple statements in a single query, so the
-		// driver has to split migration files on ";" itself. Without this a
-		// file containing more than one statement fails with "Multi-statements
-		// are not allowed" *after* migrate has flagged the version dirty,
-		// which then blocks every subsequent run.
+		// ClickHouse rejects multi-statement queries, so the driver must split
+		// migration files on ";" itself. Without this a multi-statement file
+		// fails after migrate flags the version dirty, blocking every later run.
 		MultiStatementEnabled: true,
 	})
 	if err != nil {
