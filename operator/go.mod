@@ -2,7 +2,7 @@ module go.datum.net/o11y/operator
 
 go 1.24.0
 
-toolchain go1.24.2
+toolchain go1.26.5
 
 godebug default=go1.23
 
