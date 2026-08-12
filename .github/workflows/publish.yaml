@@ -68,7 +68,7 @@ jobs:
       bundle-name: ghcr.io/milo-os/o11y/kustomize
       bundle-path: config
       images: |
-        - { path: config/operator/manager, name: ghcr.io/milo-os/telemetry }
-        - { path: config/clickhouse-migrations, name: ghcr.io/milo-os/telemetry-clickhouse-migrate }
-        - { path: config/collectors, name: ghcr.io/milo-os/o11y/otelcol }
+        - { path: config/operator/manager, name: ghcr.io/milo-os/telemetry, tag: "${{ needs.publish-operator-image.outputs.tag }}" }
+        - { path: config/clickhouse-migrations, name: ghcr.io/milo-os/telemetry-clickhouse-migrate, tag: "${{ needs.publish-clickhouse-migrate-image.outputs.tag }}" }
+        - { path: config/collectors, name: ghcr.io/milo-os/o11y/otelcol, tag: "${{ needs.publish-otelcol-image.outputs.tag }}" }
     secrets: inherit
