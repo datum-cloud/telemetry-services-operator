@@ -3,6 +3,9 @@ kind: Kustomization
 
 namespace: o11y-system
 
+configurations:
+  - kustomizeconfig.yaml
+
 labels:
   - pairs:
       app.kubernetes.io/part-of: o11y-system
