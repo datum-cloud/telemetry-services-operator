@@ -1,10 +1,10 @@
+# Generic node-local agent -- see README.md.
 apiVersion: opentelemetry.io/v1beta1
 kind: OpenTelemetryCollector
 metadata:
-  name: gateway-collector
+  name: node-agent-collector
 spec:
-  mode: deployment
-  replicas: 2
+  mode: daemonset
   managementState: managed
   # Custom distribution (otelcol/) carrying unbatch+nats alongside the
   # usual contrib set -- this collector publishes to NATS itself, no
@@ -15,9 +15,22 @@ spec:
   observability:
     metrics:
       enableMetrics: true
-  env:
-    - name: CLUSTER_NAME
-      value: "${cluster}"
+  hostNetwork: false
+  # Virtual-kubelet-backed nodes (e.g. Unikraft's kraftlet agents) tolerate
+  # everything via the toleration below but can't pull normal OCI images --
+  # same nodeSelector node-exporter already uses to skip them.
+  nodeSelector:
+    kubernetes.io/os: linux
+  tolerations:
+    - operator: Exists
+  volumes:
+    - name: varlogpods
+      hostPath:
+        path: /var/log/pods
+  volumeMounts:
+    - name: varlogpods
+      mountPath: /var/log/pods
+      readOnly: true
   resources:
     requests:
       cpu: 100m
@@ -25,19 +38,41 @@ spec:
     limits:
       cpu: 500m
       memory: 512Mi
-  ports:
-    - name: otlp-grpc
-      port: 4317
-      targetPort: 4317
-      protocol: TCP
+  env:
+    - name: CLUSTER_NAME
+      value: "${cluster}"
+    - name: K8S_NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
   config:
+    extensions:
+      k8s_observer:
+        auth_type: serviceAccount
+        observe_pods: true
+        observe_nodes: false
+        # Scoped to this DaemonSet pod's own node -- its hostPath mount
+        # only has that node's log files anyway.
+        node: ${env:K8S_NODE_NAME}
+
     receivers:
-      # Centralized OTLP push receiver -- for any sender that talks OTLP
-      # natively (e.g. Envoy, ukp-telemetry). See README.md.
-      otlp:
-        protocols:
-          grpc:
-            endpoint: 0.0.0.0:4317
+      # Catch-all for pods that don't push OTLP natively. Discovers pods
+      # dynamically via k8s_observer instead of a static exclude list --
+      # a pod opts out by carrying labels[telemetry.miloapis.com/otlp-native-logs],
+      # rather than someone having to hand-edit this file per domain.
+      receiver_creator/pods:
+        watch_observers: [k8s_observer]
+        receivers:
+          filelog:
+            rule: 'type == "pod.container" && pod.namespace != "o11y-system" && ("telemetry.miloapis.com/otlp-native-logs" in pod.labels ? pod.labels["telemetry.miloapis.com/otlp-native-logs"] : "") != "true"'
+            config:
+              include: ["/var/log/pods/`pod.namespace`_`pod.name`_`pod.uid`/`container_name`/*.log"]
+              start_at: end
+              include_file_path: true
+              include_file_name: false
+              operators:
+                - id: container-parser
+                  type: container
 
     processors:
       memory_limiter:
@@ -45,16 +80,9 @@ spec:
         limit_percentage: 75
         spike_limit_percentage: 20
 
-      # Splits multi-tenant OTLP batches into one synthetic Resource per
-      # project before milo.project.id derivation, since that attribute is
-      # resource-scoped but a single sender (e.g. Envoy's merged Gateway
-      # fleet) can batch many tenants under one Resource. See README.md.
-      groupbyattrs:
-        keys:
-          - project_name
-
-      # Fallback path: resolves milo.project.id for senders that don't set
-      # project_name themselves, via the sender pod's namespace label.
+      # See README.md for the resource attribute contract. Associates by
+      # k8s.pod.uid rather than connection, since filelog's container
+      # operator already gives us that from the log file path.
       k8sattributes:
         auth_type: serviceAccount
         extract:
@@ -66,7 +94,6 @@ spec:
             - k8s.container.name
             - k8s.deployment.name
           labels:
-            # See the resource attribute contract in README.md.
             - tag_name: k8s.namespace.project_name
               key: resourcemanager.miloapis.com/project-name
               from: namespace
@@ -75,7 +102,8 @@ spec:
               from: namespace
         pod_association:
           - sources:
-              - from: connection
+              - from: resource_attribute
+                name: k8s.pod.uid
 
       resource:
         attributes:
@@ -89,22 +117,14 @@ spec:
             from_attribute: k8s.container.name
             action: insert
 
-      # Derives milo.project.id per the resource attribute contract --
-      # see README.md for the full four-tier precedence.
       transform/milo_project_id:
         error_mode: ignore
         log_statements:
           - context: resource
             statements:
               - >-
-                set(resource.attributes["milo.project.id"], resource.attributes["project_name"])
-                where resource.attributes["project_name"] != nil and
-                resource.attributes["project_name"] != "" and
-                resource.attributes["project_name"] != "-"
-              - >-
                 set(resource.attributes["milo.project.id"], resource.attributes["k8s.namespace.project_name"])
-                where resource.attributes["milo.project.id"] == nil and
-                resource.attributes["k8s.namespace.project_name"] != nil and
+                where resource.attributes["k8s.namespace.project_name"] != nil and
                 resource.attributes["k8s.namespace.project_name"] != ""
               - >-
                 set(resource.attributes["milo.project.id"], resource.attributes["k8s.namespace.upstream_cluster_name"])
@@ -130,7 +150,7 @@ spec:
 
     exporters:
       nats:
-        url: nats.telemetry-system.svc.cluster.local:4222
+        url: nats.o11y-system.svc.cluster.local:4222
         subject_from_attribute: telemetry.subject
         logs:
           subject: o11y.logs.internal
@@ -142,8 +162,9 @@ spec:
         sampling_thereafter: 200
 
     service:
+      extensions: [k8s_observer]
       pipelines:
         logs:
-          receivers: [otlp]
-          processors: [memory_limiter, groupbyattrs, k8sattributes, resource, transform/milo_project_id, batch, unbatch]
+          receivers: [receiver_creator/pods]
+          processors: [memory_limiter, k8sattributes, resource, transform/milo_project_id, batch, unbatch]
           exporters: [nats, debug]
