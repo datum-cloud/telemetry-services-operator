@@ -28,11 +28,22 @@ tasks:
       - task: unbatchprocessor:lint
       - task: queryapi:lint
 
+  tidy:
+    desc: Run go mod tidy in every module (mirrors CI)
+    cmds:
+      - task: operator:tidy
+      - task: clickhouse-migrate:tidy
+      - task: natsreceiver:tidy
+      - task: natsexporter:tidy
+      - task: unbatchprocessor:tidy
+
   ci:
     desc: Run everything CI runs, locally, before pushing
     cmds:
+      - task: tidy
       - task: lint
       - task: test
+      - task: operator:test-e2e
 
 includes:
   operator:
