@@ -84,7 +84,7 @@ tasks:
     desc: Generate WebhookConfiguration, ClusterRole and CustomResourceDefinition objects
     deps: [install-tools]
     cmds:
-      - '{{.TOOL_DIR}}/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=../config/operator/crd/bases'
+      - '{{.TOOL_DIR}}/controller-gen rbac:roleName=manager-role crd webhook paths="./..." output:crd:artifacts:config=../config/operator/crd/bases output:rbac:artifacts:config=../config/operator/rbac output:webhook:artifacts:config=../config/operator/webhook'
 
   generate:
     desc: Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations
@@ -204,8 +204,13 @@ tasks:
       - |
         set -e
         mkdir -p dist
-        (cd ../config/operator/manager && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
-        {{.TOOL_DIR}}/kustomize build ../config/operator/default > dist/install.yaml
+        # Edit the image on a scratch copy so the tracked kustomization is never
+        # mutated when generating the installer manifest.
+        TMP_DIR=$(mktemp -d)
+        trap 'rm -rf "$TMP_DIR"' EXIT
+        cp -r ../config/operator "$TMP_DIR/"
+        (cd "$TMP_DIR/operator/manager" && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
+        {{.TOOL_DIR}}/kustomize build "$TMP_DIR/operator/default" > dist/install.yaml
 
   install:
     desc: Install CRDs into the K8s cluster specified in ~/.kube/config
@@ -228,8 +233,13 @@ tasks:
       - task: manifests
       - |
         set -e
-        (cd ../config/operator/manager && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
-        {{.TOOL_DIR}}/kustomize build ../config/operator/default | {{.KUBECTL}} apply -f -
+        # Edit the image on a scratch copy so the tracked kustomization is never
+        # mutated by deploying.
+        TMP_DIR=$(mktemp -d)
+        trap 'rm -rf "$TMP_DIR"' EXIT
+        cp -r ../config/operator "$TMP_DIR/"
+        (cd "$TMP_DIR/operator/manager" && {{.TOOL_DIR}}/kustomize edit set image ghcr.io/milo-os/telemetry={{.IMAGE_NAME}}:{{.IMAGE_TAG}})
+        {{.TOOL_DIR}}/kustomize build "$TMP_DIR/operator/default" | {{.KUBECTL}} apply -f -
 
   undeploy:
     desc: 'Undeploy controller from the K8s cluster specified in ~/.kube/config. Set IGNORE_NOT_FOUND=true to ignore resource not found errors during deletion'
