@@ -7,13 +7,13 @@ on:
     types: ['published']
 
 jobs:
-  publish-container-image:
+  publish-operator-image:
     permissions:
       id-token: write
       contents: read
       packages: write
       attestations: write
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
     with:
       image-name: telemetry
       registry-organization: milo-os
@@ -28,7 +28,7 @@ jobs:
       contents: read
       packages: write
       attestations: write
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
     with:
       image-name: telemetry-clickhouse-migrate
       registry-organization: milo-os
@@ -43,7 +43,7 @@ jobs:
       contents: read
       packages: write
       attestations: write
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
     with:
       image-name: o11y/otelcol
       registry-organization: milo-os
@@ -52,41 +52,23 @@ jobs:
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
-  publish-kustomize-bundles:
+  publish-kustomize-bundle:
+    # Build the images before publishing the bundle so the manifests that
+    # Flux picks up reference images that already exist.
+    needs:
+      - publish-operator-image
+      - publish-clickhouse-migrate-image
+      - publish-otelcol-image
     permissions:
       id-token: write
       contents: read
       packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
+    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.20.0
     with:
-      bundle-name: ghcr.io/milo-os/telemetry-kustomize
-      bundle-path: operator/config
-      image-name: ghcr.io/milo-os/telemetry
-      image-overlays: operator/config/manager
-    secrets: inherit
-
-  publish-clickhouse-migrations-kustomize:
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
-    with:
-      bundle-name: ghcr.io/milo-os/o11y/clickhouse-migrations-kustomize
-      bundle-path: config/clickhouse-migrations
-      image-name: ghcr.io/milo-os/telemetry-clickhouse-migrate
-      image-overlays: config/clickhouse-migrations
-    secrets: inherit
-
-  publish-collectors-kustomize:
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
-    with:
-      bundle-name: ghcr.io/milo-os/o11y/collectors-kustomize
-      bundle-path: config/collectors
-      image-name: ghcr.io/milo-os/o11y/otelcol
-      image-overlays: config/collectors
+      bundle-name: ghcr.io/milo-os/o11y/kustomize
+      bundle-path: config
+      images: |
+        - { path: config/operator/manager, name: ghcr.io/milo-os/telemetry }
+        - { path: config/clickhouse-migrations, name: ghcr.io/milo-os/telemetry-clickhouse-migrate }
+        - { path: config/collectors, name: ghcr.io/milo-os/o11y/otelcol }
     secrets: inherit
