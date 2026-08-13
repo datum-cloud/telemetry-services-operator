@@ -1,6 +1,7 @@
 package main
 
 import (
+	"database/sql"
 	"os"
 	"testing"
 
@@ -44,6 +45,15 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 	_, err = bootstrap.Exec("CREATE DATABASE " + quoteIdentifier(database))
 	require.NoError(t, err)
 
+	// The 000001 migration GRANTs and row-policies ops and queryapi, which exist
+	// on the real server via ssl_auth.xml certificate mapping. That layer is
+	// absent here, so create the users for the migration to apply to.
+	createTestUser(t, bootstrap, "ops")
+	createTestUser(t, bootstrap, "queryapi")
+	// queryapi needs custom-setting rights for the row policy.
+	_, err = bootstrap.Exec("GRANT settings_allow_custom_setting_read, settings_allow_custom_setting_write ON *.* TO queryapi")
+	require.NoError(t, err)
+
 	scoped := *opts
 	scoped.Auth.Database = database
 	db := clickhousego.OpenDB(&scoped)
@@ -67,4 +77,41 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 		database,
 	).Scan(&count))
 	require.Equal(t, uint64(1), count, "expected the logs table to exist")
+
+	assertRestrictedQueryapi(t, db, database)
 }
+
+// assertRestrictedQueryapi verifies the 000001 migration installed the queryapi
+// row policy and read-only grant. Requires the queryapi user to exist.
+func assertRestrictedQueryapi(t *testing.T, db *sql.DB, database string) {
+	t.Helper()
+
+	var policies uint64
+	require.NoError(t, db.QueryRow(
+		"SELECT count() FROM system.row_policies WHERE database = ? AND table_name = 'logs' AND policy_name = 'queryapi_project_isolation'",
+		database,
+	).Scan(&policies))
+	require.Equal(t, uint64(1), policies, "expected the queryapi_project_isolation row policy on logs")
+
+	// ops keeps full read; queryapi is confined to SELECT on logs.
+	var grants string
+	require.NoError(t, db.QueryRow(
+		"SELECT access_type FROM system.grants WHERE user_name = 'queryapi' AND (database, table) = (?, 'logs')",
+		database,
+	).Scan(&grants))
+	require.Equal(t, "SELECT", grants, "queryapi must be read-only (SELECT) on logs")
+}
+
+// createTestUser creates a throwaway user for integration testing, dropping any
+// leftover from a previous run first.
+func createTestUser(t *testing.T, db *sql.DB, name string) {
+	t.Helper()
+	for _, stmt := range []string{
+		"DROP USER IF EXISTS " + name,
+		"CREATE USER " + name + " IDENTIFIED WITH no_password",
+	} {
+		_, err := db.Exec(stmt)
+		require.NoError(t, err, "exec %q", stmt)
+	}
+}
+
