@@ -59,6 +59,7 @@ jobs:
       - publish-operator-image
       - publish-clickhouse-migrate-image
       - publish-otelcol-image
+      - publish-queryapi-image
     permissions:
       id-token: write
       contents: read
@@ -71,6 +72,7 @@ jobs:
         - { path: config/operator/manager, name: ghcr.io/milo-os/telemetry, tag: "${{ needs.publish-operator-image.outputs.tag }}" }
         - { path: config/clickhouse-migrations, name: ghcr.io/milo-os/telemetry-clickhouse-migrate, tag: "${{ needs.publish-clickhouse-migrate-image.outputs.tag }}" }
         - { path: config/collectors, name: ghcr.io/milo-os/o11y/otelcol, tag: "${{ needs.publish-otelcol-image.outputs.tag }}" }
+        - { path: config/queryapi, name: ghcr.io/milo-os/o11y/queryapi, tag: "${{ needs.publish-queryapi-image.outputs.tag }}" }
     secrets: inherit
 
   publish-queryapi-image:
@@ -79,24 +81,11 @@ jobs:
       contents: read
       packages: write
       attestations: write
-    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.14.0
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
     with:
       image-name: o11y/queryapi
       registry-organization: milo-os
       context: queryapi
       dockerfile-path: queryapi/Dockerfile
       platforms: linux/amd64,linux/arm64
-    secrets: inherit
-
-  publish-queryapi-kustomize:
-    permissions:
-      id-token: write
-      contents: read
-      packages: write
-    uses: datum-cloud/actions/.github/workflows/publish-kustomize-bundle.yaml@v1.14.0
-    with:
-      bundle-name: ghcr.io/milo-os/o11y/queryapi-kustomize
-      bundle-path: config/queryapi
-      image-name: ghcr.io/milo-os/o11y/queryapi
-      image-overlays: config/queryapi
     secrets: inherit
