@@ -6,6 +6,7 @@ tasks:
     cmds:
       - task: operator:build
       - task: clickhouse-migrate:build
+      - task: queryapi:build
 
   test:
     desc: Test every module that has its own test task
@@ -15,6 +16,7 @@ tasks:
       - task: natsreceiver:test
       - task: natsexporter:test
       - task: unbatchprocessor:test
+      - task: queryapi:test
 
   lint:
     desc: Lint every module that has its own lint task
@@ -24,6 +26,7 @@ tasks:
       - task: natsreceiver:lint
       - task: natsexporter:lint
       - task: unbatchprocessor:lint
+      - task: queryapi:lint
 
   tidy:
     desc: Run go mod tidy in every module (mirrors CI)
@@ -58,3 +61,6 @@ includes:
   unbatchprocessor:
     taskfile: ./processor/unbatchprocessor
     dir: ./processor/unbatchprocessor
+  queryapi:
+    taskfile: ./queryapi
+    dir: ./queryapi
