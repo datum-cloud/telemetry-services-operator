@@ -78,6 +78,15 @@ spec:
         logs:
           subject: o11y.logs.>
           encoding: otlp_proto
+        # natsreceiver Validate() requires a subject on every signal type even
+        # when unused, so give metrics/traces harmless unused subjects. Neither
+        # pipeline is wired up; this stays the logs-only sink.
+        metrics:
+          subject: o11y.unused.metrics
+          encoding: otlp_proto
+        traces:
+          subject: o11y.unused.traces
+          encoding: otlp_proto
 
     processors:
       memory_limiter:
@@ -92,10 +101,11 @@ spec:
         send_batch_size: 512
 
     exporters:
-      # ClickHouse serves all signals, so name exporters per signal
-      # (clickhouse_logs/metrics/traces). Sibling receiver+exporter pipelines
-      # can be added for metrics/traces; this bundle is the logs sink only.
-      clickhouse_logs:
+      # Contrib clickhouseexporter registers under the id `clickhouse`, so the
+      # exporter must be named `clickhouse` (not clickhouse_logs) to resolve.
+      # Sibling metrics/traces pipelines can be added later with their own
+      # receiver+exporter; this bundle is the logs sink only.
+      clickhouse:
         # Secure TCP endpoint of a ClickHouse replica, e.g.
         # tcp://chi-clickhouse-o11y-0-0.o11y-system.svc.cluster.local:9440.
         endpoint: ${clickhouse_endpoint}
@@ -121,4 +131,4 @@ spec:
         logs:
           receivers: [nats]
           processors: [memory_limiter, batch]
-          exporters: [clickhouse_logs]
+          exporters: [clickhouse]
