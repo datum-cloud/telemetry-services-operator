@@ -19,15 +19,19 @@ data:
       verify: true
     }
     http_port: 8222
+    jetstream {
+      store_dir: "/tmp/js"
+      max_mem: 64MB
+      max_file: 0
+      domain: "edge"
+    }
     leafnodes {
       remotes: [
         {
           url: $NATS_HUB_LEAFNODE_URL
-          tls: {
-            cert_file: "/etc/nats-leaf-tls/tls.crt"
-            key_file: "/etc/nats-leaf-tls/tls.key"
-            ca_file: "/etc/nats-leaf-tls/ca.crt"
-          }
+          # Inline seed only -- nkey does NOT accept a file path.
+          # Injected from the edge-leaf-nkey Secret via env.
+          nkey: $EDGE_NKEY_SEED
         }
       ]
     }
@@ -69,6 +73,11 @@ spec:
           env:
             - name: NATS_HUB_LEAFNODE_URL
               value: "${hub_leafnode_url}"
+            - name: EDGE_NKEY_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: edge-leaf-nkey
+                  key: edge.seed
           ports:
             - name: client
               containerPort: 4222
@@ -77,9 +86,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/nats
-            - name: nats-leaf-tls
-              mountPath: /etc/nats-leaf-tls
-              readOnly: true
             - name: nats-server-tls
               mountPath: /etc/nats-server-tls
               readOnly: true
@@ -93,9 +99,6 @@ spec:
         - name: config
           configMap:
             name: nats-config
-        - name: nats-leaf-tls
-          secret:
-            secretName: "${nats_leaf_tls_secret_name}"
         - name: nats-server-tls
           secret:
             secretName: "${local_nats_server_tls_secret_name}"
