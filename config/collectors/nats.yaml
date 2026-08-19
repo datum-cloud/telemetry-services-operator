@@ -56,7 +56,7 @@ spec:
     spec:
       containers:
         - name: metrics
-          image: natsio/prometheus-nats-exporter:v0.20.1
+          image: natsio/prometheus-nats-exporter:0.20.1
           args:
             - -varz
             - -connz
