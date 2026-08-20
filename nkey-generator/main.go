@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 // Command nkey-generator provisions per-PoP NATS leaf NKey credentials for the
 // o11y telemetry hub. It runs on a schedule in the hub cluster and, for every
 // Karmada Cluster labelled telemetry.datum.net/nats-leaf=enabled:
@@ -11,8 +13,8 @@
 //     consumes via valuesFrom so the per-PoP nkey users land in the O11Y
 //     account.
 //
-// The Karmada API is reached directly (not via kubectl) using a secretless
-// kubeconfig whose tokenFile points at a projected ServiceAccount token.
+// The Karmada API is reached using a secretless kubeconfig whose tokenFile
+// points at a projected ServiceAccount token.
 package main
 
 import (

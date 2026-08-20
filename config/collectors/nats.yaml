@@ -1,9 +1,6 @@
-# Standalone core NATS server (no local JetStream). gateway-collector and
-# node-agent-collector publish logs here directly via the nats exporter.
-# Edge PoPs have no local persistent storage, so this runs core NATS
-# pub/sub only -- no stream, no durability at this hop. It makes a leaf
-# connection (NATS_HUB_LEAFNODE_URL) to a real, storage-backed hub for
-# durability.
+# Edge-local core NATS (no JetStream -- lack of local durable storage).
+# Collectors publish here; a leaf connection (NATS_HUB_LEAFNODE_URL)
+# forwards to the storage-backed hub.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,10 +20,9 @@ data:
       remotes: [
         {
           url: $NATS_HUB_LEAFNODE_URL
-          # The hub's leafnode listener serves LetsEncrypt TLS and
-          # authenticates this leaf by NKey -- it does NOT request a client
-          # certificate. So the edge presents only its per-PoP NKey seed and
-          # trusts the hub's cert against the public LE chain.
+          # Hub leafnode serves LetsEncrypt TLS and authenticates this leaf
+          # by NKey (no client cert requested); trust its cert via the
+          # public LE chain.
           nkey: $EDGE_NKEY_SEED
           tls: {
             handshake_first: true
@@ -75,8 +71,8 @@ spec:
             - name: EDGE_NKEY_SEED
               valueFrom:
                 secretKeyRef:
-                  # Per-PoP NKey seed, pulled from GCP Secret Manager by the
-                  # edge o11y app (ExternalSecret nats-leaf-nkey-<cluster>).
+                  # Per-PoP NKey seed from GCP Secret Manager (ExternalSecret
+                  # nats-leaf-nkey-<cluster>).
                   name: edge-leaf-nkey
                   key: edge.seed
           ports:
@@ -100,12 +96,6 @@ spec:
         - name: config
           configMap:
             name: nats-config
-        # Server cert for the edge-local client port, issued by the o11y-system
-        # ClusterIssuer via the cert-manager CSI driver. The edge app-sync
-        # patches PLACEHOLDER-issuer to the real ClusterIssuer. verify: true in
-        # nats.conf means collectors must present a client cert signed by the
-        # same CA (provided by the CSI-based nats-client-certs volume on each
-        # collector) -- intra-cluster mTLS, mirroring the hub sink pattern.
         - name: nats-server-tls
           csi:
             driver: csi.cert-manager.io
