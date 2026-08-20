@@ -30,6 +30,26 @@ spec:
       port: 4317
       targetPort: 4317
       protocol: TCP
+  volumes:
+    # mTLS client cert for the edge-local NATS client port. Issued by the
+    # o11y-system ClusterIssuer via the cert-manager CSI driver; the edge
+    # app-sync patches PLACEHOLDER-issuer to the real ClusterIssuer. Mirrors
+    # the hub o11y-sink collector's nats-client-certs volume.
+    - name: nats-client-certs
+      csi:
+        driver: csi.cert-manager.io
+        readOnly: true
+        volumeAttributes:
+          csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+          csi.cert-manager.io/issuer-kind: ClusterIssuer
+          csi.cert-manager.io/common-name: gateway-collector-nats-client
+          csi.cert-manager.io/duration: "2160h"
+          csi.cert-manager.io/renew-before: "360h"
+          csi.cert-manager.io/key-usages: "client auth"
+  volumeMounts:
+    - name: nats-client-certs
+      mountPath: /etc/otel/nats-client
+      readOnly: true
   config:
     receivers:
       # Centralized OTLP push receiver -- for any sender that talks OTLP
@@ -132,6 +152,12 @@ spec:
       nats:
         url: nats.o11y-system.svc.cluster.local:4222
         subject_from_attribute: telemetry.subject
+        # mTLS against the edge-local NATS server (which verifies client certs
+        # against the o11y-system CA via nats.conf tls{verify:true}).
+        tls:
+          ca_file: /etc/otel/nats-client/ca.crt
+          cert_file: /etc/otel/nats-client/tls.crt
+          key_file: /etc/otel/nats-client/tls.key
         logs:
           subject: o11y.logs.internal
           encoding: otlp_proto

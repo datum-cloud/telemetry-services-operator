@@ -23,10 +23,13 @@ data:
       remotes: [
         {
           url: $NATS_HUB_LEAFNODE_URL
+          # The hub's leafnode listener serves LetsEncrypt TLS and
+          # authenticates this leaf by NKey -- it does NOT request a client
+          # certificate. So the edge presents only its per-PoP NKey seed and
+          # trusts the hub's cert against the public LE chain.
+          nkey: $EDGE_NKEY_SEED
           tls: {
-            cert_file: "/etc/nats-leaf-tls/tls.crt"
-            key_file: "/etc/nats-leaf-tls/tls.key"
-            ca_file: "/etc/nats-leaf-tls/ca.crt"
+            handshake_first: true
           }
         }
       ]
@@ -69,6 +72,13 @@ spec:
           env:
             - name: NATS_HUB_LEAFNODE_URL
               value: "${hub_leafnode_url}"
+            - name: EDGE_NKEY_SEED
+              valueFrom:
+                secretKeyRef:
+                  # Per-PoP NKey seed, pulled from GCP Secret Manager by the
+                  # edge o11y app (ExternalSecret nats-leaf-nkey-<cluster>).
+                  name: edge-leaf-nkey
+                  key: edge.seed
           ports:
             - name: client
               containerPort: 4222
@@ -77,9 +87,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/nats
-            - name: nats-leaf-tls
-              mountPath: /etc/nats-leaf-tls
-              readOnly: true
             - name: nats-server-tls
               mountPath: /etc/nats-server-tls
               readOnly: true
@@ -93,12 +100,23 @@ spec:
         - name: config
           configMap:
             name: nats-config
-        - name: nats-leaf-tls
-          secret:
-            secretName: "${nats_leaf_tls_secret_name}"
+        # Server cert for the edge-local client port, issued by the o11y-system
+        # ClusterIssuer via the cert-manager CSI driver. The edge app-sync
+        # patches PLACEHOLDER-issuer to the real ClusterIssuer. verify: true in
+        # nats.conf means collectors must present a client cert signed by the
+        # same CA (provided by the CSI-based nats-client-certs volume on each
+        # collector) -- intra-cluster mTLS, mirroring the hub sink pattern.
         - name: nats-server-tls
-          secret:
-            secretName: "${local_nats_server_tls_secret_name}"
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+              csi.cert-manager.io/issuer-kind: ClusterIssuer
+              csi.cert-manager.io/common-name: edge-nats-server
+              csi.cert-manager.io/duration: "2160h"
+              csi.cert-manager.io/renew-before: "360h"
+              csi.cert-manager.io/key-usages: "server auth"
 ---
 apiVersion: v1
 kind: Service
