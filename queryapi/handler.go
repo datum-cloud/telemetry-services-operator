@@ -31,7 +31,7 @@ func NewHandler(logger *slog.Logger, store storage.LogStore, cfg Config) http.Ha
 	mux.HandleFunc("GET /readyz", readyz(store, cfg.QueryTimeout))
 	mux.Handle("GET /metrics", promhttp.Handler())
 
-	// /v1 matches the path suffix after "apis/<telemetryGroup>" (openapi.yaml's servers end in /v1).
+	// /v1 matches the path suffix after "apis/<o11yGroup>" (openapi.yaml's servers end in /v1).
 	tenant := http.NewServeMux()
 	route(tenant, "GET /v1/loki/api/v1/query", h.lokiQuery)
 	route(tenant, "GET /v1/loki/api/v1/query_range", h.lokiQueryRange)

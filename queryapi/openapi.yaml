@@ -45,17 +45,16 @@ info:
     enhancements/telemetry/README.md.
   version: "0.3.0"
 servers:
-  - url: "/projects/{projectId}/control-plane/apis/{telemetryGroup}/v1"
+  - url: "/projects/{projectId}/control-plane/apis/{o11yGroup}/v1"
     description: >-
-      Per-project APIService path. projectId and telemetryGroup are resolved
-      by the kube-aggregator proxy chain, not supplied by API clients directly;
-      they appear here only because OpenAPI requires a concrete server URL
-      template.
+      Per-project APIService path. projectId and o11yGroup are resolved by the
+      kube-aggregator proxy chain, not supplied by API clients directly; they
+      appear here only because OpenAPI requires a concrete server URL template.
     variables:
       projectId:
         default: current
-      telemetryGroup:
-        default: telemetry.datumapis.com
+      o11yGroup:
+        default: o11y.miloapis.com
 
 security:
   - bearerAuth: []

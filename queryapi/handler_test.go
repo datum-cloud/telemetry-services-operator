@@ -60,7 +60,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 	// The spec's server entry is a template kube-aggregator fills in at
 	// runtime (see openapi.yaml's `servers` block); route matching needs a
 	// concrete instance of it, not the test server's own URL.
-	const specBase = "/projects/test-project/control-plane/apis/telemetry.datumapis.com/v1"
+	const specBase = "/projects/test-project/control-plane/apis/o11y.miloapis.com/v1"
 
 	cases := []struct {
 		name   string
