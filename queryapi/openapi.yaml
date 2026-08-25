@@ -60,7 +60,7 @@ security:
   - bearerAuth: []
 
 paths:
-  /loki/api/v1/query:
+  /logs/loki/api/v1/query:
     get:
       operationId: lokiQuery
       summary: Instant log query (mimics Loki's /loki/api/v1/query)
@@ -89,7 +89,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /loki/api/v1/query_range:
+  /logs/loki/api/v1/query_range:
     get:
       operationId: lokiQueryRange
       summary: Range log query (mimics Loki's /loki/api/v1/query_range)
@@ -114,7 +114,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /loki/api/v1/labels:
+  /logs/loki/api/v1/labels:
     get:
       operationId: lokiLabelNames
       summary: List label names in use (mimics Loki's /loki/api/v1/labels)
@@ -139,7 +139,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /loki/api/v1/label/{name}/values:
+  /logs/loki/api/v1/label/{name}/values:
     get:
       operationId: lokiLabelValues
       summary: >-
@@ -182,7 +182,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /loki/api/v1/series:
+  /logs/loki/api/v1/series:
     get:
       operationId: lokiSeries
       summary: >-
@@ -229,7 +229,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /api/v1/query:
+  /metrics/api/v1/query:
     post:
       operationId: promQuery
       summary: >-
@@ -257,7 +257,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /api/v1/query_range:
+  /metrics/api/v1/query_range:
     post:
       operationId: promQueryRange
       summary: >-
@@ -285,14 +285,14 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /api/v1/series:
+  /metrics/api/v1/series:
     get:
       operationId: promSeries
       summary: >-
         List distinct series matching selectors (mimics Prometheus's
         /api/v1/series)
       description: >-
-        Same cardinality-bounding concern as `/loki/api/v1/series` applies
+        Same cardinality-bounding concern as `/logs/loki/api/v1/series` applies
         here: returned series are bounded to a known/allowlisted set of
         label dimensions, not every dynamic dimension a metric might carry.
       tags: [discovery]
@@ -326,7 +326,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /api/v1/labels:
+  /metrics/api/v1/labels:
     get:
       operationId: promLabelNames
       summary: >-
@@ -359,7 +359,7 @@ paths:
         default:
           $ref: "#/components/responses/UnexpectedError"
 
-  /api/v1/label/{name}/values:
+  /metrics/api/v1/label/{name}/values:
     get:
       operationId: promLabelValues
       summary: >-
@@ -522,7 +522,7 @@ components:
     SeriesResponse:
       type: object
       description: >-
-        Shared by `/loki/api/v1/series` and `/api/v1/series` — same shape in
+        Shared by `/logs/loki/api/v1/series` and `/metrics/api/v1/series` — same shape in
         both real APIs: a list of label-sets, no sample values.
       required: [status, data]
       properties:

@@ -67,5 +67,5 @@ unscoped query.
 task queryapi:test
 task queryapi:lint
 go run ./cmd --trust-project-header   # the header source is off by default
-# then: curl -H 'X-Project-Id: p' 'localhost:8080/v1/loki/api/v1/labels'
+# then: curl -H 'X-Project-Id: p' 'localhost:8080/loki/api/v1/labels'
 ```
