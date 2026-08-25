@@ -6,10 +6,8 @@ spec:
   mode: deployment
   replicas: 2
   managementState: managed
-  # Custom distribution (otelcol/) carrying unbatch+nats alongside the
-  # usual contrib set -- this collector publishes to NATS itself, no
-  # bridge collector in between. Tag is overlaid at publish time by the
-  # kustomize-bundle workflow; see .github/workflows/publish.yaml.
+  # Custom otelcol distribution (unbatch+nats) -- publishes to NATS itself.
+  # Tag overlaid at publish by the kustomize-bundle workflow (publish.yaml).
   image: ghcr.io/milo-os/o11y/otelcol:v0.0.0-dev
   imagePullPolicy: Always
   observability:
@@ -30,6 +28,24 @@ spec:
       port: 4317
       targetPort: 4317
       protocol: TCP
+  volumes:
+    # mTLS client cert for the edge-local NATS client port (o11y-system
+    # ClusterIssuer via CSI; PLACEHOLDER-issuer patched by the edge app-sync).
+    - name: nats-client-certs
+      csi:
+        driver: csi.cert-manager.io
+        readOnly: true
+        volumeAttributes:
+          csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+          csi.cert-manager.io/issuer-kind: ClusterIssuer
+          csi.cert-manager.io/common-name: gateway-collector-nats-client
+          csi.cert-manager.io/duration: "2160h"
+          csi.cert-manager.io/renew-before: "360h"
+          csi.cert-manager.io/key-usages: "client auth"
+  volumeMounts:
+    - name: nats-client-certs
+      mountPath: /etc/otel/nats-client
+      readOnly: true
   config:
     receivers:
       # Centralized OTLP push receiver -- for any sender that talks OTLP
@@ -132,6 +148,11 @@ spec:
       nats:
         url: nats.o11y-system.svc.cluster.local:4222
         subject_from_attribute: telemetry.subject
+        # mTLS to the edge NATS server (nats.conf tls{verify:true}).
+        tls:
+          ca_file: /etc/otel/nats-client/ca.crt
+          cert_file: /etc/otel/nats-client/tls.crt
+          key_file: /etc/otel/nats-client/tls.key
         logs:
           subject: o11y.logs.internal
           encoding: otlp_proto

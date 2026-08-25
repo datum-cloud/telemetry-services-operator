@@ -7,6 +7,7 @@ tasks:
       - task: operator:build
       - task: clickhouse-migrate:build
       - task: queryapi:build
+      - task: nkey-generator:build
 
   test:
     desc: Test every module that has its own test task
@@ -17,6 +18,7 @@ tasks:
       - task: natsexporter:test
       - task: unbatchprocessor:test
       - task: queryapi:test
+      - task: nkey-generator:test
 
   lint:
     desc: Lint every module that has its own lint task
@@ -27,6 +29,7 @@ tasks:
       - task: natsexporter:lint
       - task: unbatchprocessor:lint
       - task: queryapi:lint
+      - task: nkey-generator:lint
 
   tidy:
     desc: Run go mod tidy in every module (mirrors CI)
@@ -36,6 +39,7 @@ tasks:
       - task: natsreceiver:tidy
       - task: natsexporter:tidy
       - task: unbatchprocessor:tidy
+      - task: nkey-generator:tidy
 
   ci:
     desc: Run everything CI runs, locally, before pushing
@@ -64,3 +68,6 @@ includes:
   queryapi:
     taskfile: ./queryapi
     dir: ./queryapi
+  nkey-generator:
+    taskfile: ./nkey-generator
+    dir: ./nkey-generator

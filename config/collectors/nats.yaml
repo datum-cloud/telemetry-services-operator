@@ -1,9 +1,6 @@
-# Standalone core NATS server (no local JetStream). gateway-collector and
-# node-agent-collector publish logs here directly via the nats exporter.
-# Edge PoPs have no local persistent storage, so this runs core NATS
-# pub/sub only -- no stream, no durability at this hop. It makes a leaf
-# connection (NATS_HUB_LEAFNODE_URL) to a real, storage-backed hub for
-# durability.
+# Edge-local core NATS (no JetStream -- lack of local durable storage).
+# Collectors publish here; a leaf connection (NATS_HUB_LEAFNODE_URL)
+# forwards to the storage-backed hub.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -23,10 +20,12 @@ data:
       remotes: [
         {
           url: $NATS_HUB_LEAFNODE_URL
+          # Hub leafnode serves LetsEncrypt TLS and authenticates this leaf
+          # by NKey (no client cert requested); trust its cert via the
+          # public LE chain.
+          nkey: $EDGE_NKEY_SEED
           tls: {
-            cert_file: "/etc/nats-leaf-tls/tls.crt"
-            key_file: "/etc/nats-leaf-tls/tls.key"
-            ca_file: "/etc/nats-leaf-tls/ca.crt"
+            handshake_first: true
           }
         }
       ]
@@ -69,6 +68,13 @@ spec:
           env:
             - name: NATS_HUB_LEAFNODE_URL
               value: "${hub_leafnode_url}"
+            - name: EDGE_NKEY_SEED
+              valueFrom:
+                secretKeyRef:
+                  # Per-PoP NKey seed from GCP Secret Manager (ExternalSecret
+                  # nats-leaf-nkey-<cluster>).
+                  name: edge-leaf-nkey
+                  key: edge.seed
           ports:
             - name: client
               containerPort: 4222
@@ -77,9 +83,6 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /etc/nats
-            - name: nats-leaf-tls
-              mountPath: /etc/nats-leaf-tls
-              readOnly: true
             - name: nats-server-tls
               mountPath: /etc/nats-server-tls
               readOnly: true
@@ -93,12 +96,17 @@ spec:
         - name: config
           configMap:
             name: nats-config
-        - name: nats-leaf-tls
-          secret:
-            secretName: "${nats_leaf_tls_secret_name}"
         - name: nats-server-tls
-          secret:
-            secretName: "${local_nats_server_tls_secret_name}"
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+              csi.cert-manager.io/issuer-kind: ClusterIssuer
+              csi.cert-manager.io/common-name: edge-nats-server
+              csi.cert-manager.io/duration: "2160h"
+              csi.cert-manager.io/renew-before: "360h"
+              csi.cert-manager.io/key-usages: "server auth"
 ---
 apiVersion: v1
 kind: Service

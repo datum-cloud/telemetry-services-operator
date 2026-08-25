@@ -37,6 +37,21 @@ jobs:
       platforms: linux/amd64,linux/arm64
     secrets: inherit
 
+  publish-nkey-generator-image:
+    permissions:
+      id-token: write
+      contents: read
+      packages: write
+      attestations: write
+    uses: datum-cloud/actions/.github/workflows/publish-docker.yaml@v1.20.0
+    with:
+      image-name: telemetry-nkey-generator
+      registry-organization: milo-os
+      context: nkey-generator
+      dockerfile-path: nkey-generator/Dockerfile
+      platforms: linux/amd64,linux/arm64
+    secrets: inherit
+
   publish-otelcol-image:
     permissions:
       id-token: write
