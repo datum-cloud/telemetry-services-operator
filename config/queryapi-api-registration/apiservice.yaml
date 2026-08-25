@@ -1,13 +1,13 @@
 apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
-  name: v1.o11y.miloapis.com
+  name: v1alpha1.o11y.miloapis.com
 spec:
   service:
     name: queryapi
     namespace: o11y-system
     port: 8080
   group: o11y.miloapis.com
-  version: v1
+  version: v1alpha1
   groupPriorityMinimum: 1000
   versionPriority: 15

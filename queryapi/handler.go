@@ -31,27 +31,29 @@ func NewHandler(logger *slog.Logger, store storage.LogStore, cfg Config) http.Ha
 	mux.HandleFunc("GET /readyz", readyz(store, cfg.QueryTimeout))
 	mux.Handle("GET /metrics", promhttp.Handler())
 
-	// /v1 matches the path suffix after "apis/<o11yGroup>" (openapi.yaml's servers end in /v1).
+	// /v1alpha1 matches the version segment after "apis/<o11yGroup>"
+	// (openapi.yaml's servers end in /v1alpha1).
 	tenant := http.NewServeMux()
-	route(tenant, "GET /v1/loki/api/v1/query", h.lokiQuery)
-	route(tenant, "GET /v1/loki/api/v1/query_range", h.lokiQueryRange)
-	route(tenant, "GET /v1/loki/api/v1/labels", h.lokiLabelNames)
-	route(tenant, "GET /v1/loki/api/v1/label/{name}/values", h.lokiLabelValues)
-	route(tenant, "GET /v1/loki/api/v1/series", h.lokiSeries)
+	route(tenant, "GET /v1alpha1/loki/api/v1/query", h.lokiQuery)
+	route(tenant, "GET /v1alpha1/loki/api/v1/query_range", h.lokiQueryRange)
+	route(tenant, "GET /v1alpha1/loki/api/v1/labels", h.lokiLabelNames)
+	route(tenant, "GET /v1alpha1/loki/api/v1/label/{name}/values", h.lokiLabelValues)
+	route(tenant, "GET /v1alpha1/loki/api/v1/series", h.lokiSeries)
 
 	// POST-only, form-encoded, matching Grafana's Prometheus datasource.
-	route(tenant, "POST /v1/api/v1/query", h.promQuery)
-	route(tenant, "POST /v1/api/v1/query_range", h.promQueryRange)
-	route(tenant, "GET /v1/api/v1/series", h.promSeries)
-	route(tenant, "GET /v1/api/v1/labels", h.promLabelNames)
-	route(tenant, "GET /v1/api/v1/label/{name}/values", h.promLabelValues)
+	route(tenant, "POST /v1alpha1/api/v1/query", h.promQuery)
+	route(tenant, "POST /v1alpha1/api/v1/query_range", h.promQueryRange)
+	route(tenant, "GET /v1alpha1/api/v1/series", h.promSeries)
+	route(tenant, "GET /v1alpha1/api/v1/labels", h.promLabelNames)
+	route(tenant, "GET /v1alpha1/api/v1/label/{name}/values", h.promLabelValues)
 
 	mux.Handle("/", miloauth.Middleware(logger, cfg.TrustProjectHeader, stripProxyPrefixes(tenant)))
 	return mux
 }
 
-// stripProxyPrefixes rewrites Grafana's bare /loki/api/v1 form onto /v1. Milo's
-// proxy chain has already consumed the /projects/... and /apis/{group} prefixes.
+// stripProxyPrefixes rewrites Grafana's bare /loki/api/v1 form onto /v1alpha1.
+// Milo's proxy chain has already consumed the /projects/... and /apis/{group}
+// prefixes.
 func stripProxyPrefixes(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := normalizePath(r.URL.Path)
@@ -68,8 +70,9 @@ func stripProxyPrefixes(next http.Handler) http.Handler {
 	})
 }
 
-// normalizePath rewrites a leading /loki/api/v1 to /v1/loki/api/v1, matching
-// whole segments so an in-path lookalike (e.g. a label value) is never touched.
+// normalizePath rewrites a leading /loki/api/v1 to /v1alpha1/loki/api/v1,
+// matching whole segments so an in-path lookalike (e.g. a label value) is
+// never touched.
 func normalizePath(path string) string {
 	segs := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	if len(segs) > 0 && segs[0] == "" {
@@ -78,7 +81,7 @@ func normalizePath(path string) string {
 	}
 
 	if len(segs) >= 3 && segs[0] == "loki" && segs[1] == "api" && segs[2] == "v1" {
-		segs = append([]string{"v1"}, segs...)
+		segs = append([]string{"v1alpha1"}, segs...)
 	}
 	return "/" + strings.Join(segs, "/")
 }
