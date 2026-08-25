@@ -60,7 +60,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 	// The spec's server entry is a template kube-aggregator fills in at
 	// runtime (see openapi.yaml's `servers` block); route matching needs a
 	// concrete instance of it, not the test server's own URL.
-	const specBase = "/projects/test-project/control-plane/apis/telemetry.datumapis.com/v1"
+	const specBase = "/projects/test-project/control-plane/apis/o11y.miloapis.com/v1alpha1"
 
 	cases := []struct {
 		name   string
@@ -69,27 +69,27 @@ func TestHandlersConformToSpec(t *testing.T) {
 		query  string
 		form   url.Values
 	}{
-		{"loki query", http.MethodGet, "/loki/api/v1/query", `query={service_name="waf"}`, nil},
+		{"loki query", http.MethodGet, "/logs/loki/api/v1/query", `query={service_name="waf"}`, nil},
 		{
-			"loki query_range", http.MethodGet, "/loki/api/v1/query_range",
+			"loki query_range", http.MethodGet, "/logs/loki/api/v1/query_range",
 			`query={service_name="waf"}&start=2026-01-01T00:00:00Z&end=2026-01-01T01:00:00Z`, nil,
 		},
-		{"loki label names", http.MethodGet, "/loki/api/v1/labels", "", nil},
-		{"loki label values", http.MethodGet, "/loki/api/v1/label/severity/values", "", nil},
-		{"loki series", http.MethodGet, "/loki/api/v1/series", `match[]={service_name="foo"}`, nil},
-		{"prom query", http.MethodPost, "/api/v1/query", "", url.Values{"query": {"cpu_usage"}}},
+		{"loki label names", http.MethodGet, "/logs/loki/api/v1/labels", "", nil},
+		{"loki label values", http.MethodGet, "/logs/loki/api/v1/label/severity/values", "", nil},
+		{"loki series", http.MethodGet, "/logs/loki/api/v1/series", `match[]={service_name="foo"}`, nil},
+		{"prom query", http.MethodPost, "/metrics/api/v1/query", "", url.Values{"query": {"cpu_usage"}}},
 		{
-			"prom query_range", http.MethodPost, "/api/v1/query_range", "",
+			"prom query_range", http.MethodPost, "/metrics/api/v1/query_range", "",
 			url.Values{"query": {"cpu_usage"}, "start": {"2026-01-01T00:00:00Z"}, "end": {"2026-01-01T01:00:00Z"}, "step": {"1m"}},
 		},
-		{"prom series", http.MethodGet, "/api/v1/series", `match[]=cpu_usage{service="foo"}`, nil},
-		{"prom label names", http.MethodGet, "/api/v1/labels", "", nil},
-		{"prom label values", http.MethodGet, "/api/v1/label/service/values", "", nil},
+		{"prom series", http.MethodGet, "/metrics/api/v1/series", `match[]=cpu_usage{service="foo"}`, nil},
+		{"prom label names", http.MethodGet, "/metrics/api/v1/labels", "", nil},
+		{"prom label values", http.MethodGet, "/metrics/api/v1/label/service/values", "", nil},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			realURL := srv.URL + "/v1" + tc.path
+			realURL := srv.URL + "/v1alpha1" + tc.path
 			if tc.query != "" {
 				realURL += "?" + tc.query
 			}
@@ -162,7 +162,7 @@ func TestUnscopedRequestIsUnauthorized(t *testing.T) {
 	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/v1/loki/api/v1/query?query=%7Bservice_name%3D%22waf%22%7D")
+	resp, err := http.Get(srv.URL + "/v1alpha1/logs/loki/api/v1/query?query=%7Bservice_name%3D%22waf%22%7D")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestSeriesUnionsSelectors(t *testing.T) {
 
 	get := func(t *testing.T, query string) (int, []map[string]string) {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/loki/api/v1/series?"+query, nil)
+		req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1alpha1/logs/loki/api/v1/series?"+query, nil)
 		if err != nil {
 			t.Fatalf("build request: %v", err)
 		}
@@ -313,7 +313,7 @@ func (i *oneRowIterator) Close() error     { return nil }
 
 // TestForwardedPathShapes covers the path shapes queryapi actually receives:
 // Milo's ProjectRouter strips /projects/.../control-plane and /apis/{group}
-// upstream, so only the remaining /v1 path or Grafana's bare /loki form routes;
+// upstream, so only the remaining /v1alpha1 path or Grafana's bare /loki form routes;
 // stray proxy prefixes are not trusted. Project comes from user extras.
 func TestForwardedPathShapes(t *testing.T) {
 	cases := []struct {
@@ -321,13 +321,13 @@ func TestForwardedPathShapes(t *testing.T) {
 		path string
 		want int // expected status code
 	}{
-		{"already trimmed", "/v1/loki/api/v1/query_range", http.StatusOK},
+		{"already trimmed", "/v1alpha1/logs/loki/api/v1/query_range", http.StatusOK},
 		{"bare loki form", "/loki/api/v1/query_range", http.StatusOK},
 		// Proxy prefixes are stripped upstream; a stray /apis or /projects
 		// prefix must NOT be rewritten or trusted here.
-		{"apis prefix not routed", "/apis/telemetry.miloapis.com/v1/loki/api/v1/query_range", http.StatusNotFound},
+		{"apis prefix not routed", "/apis/telemetry.miloapis.com/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound},
 		{"project prefix not routed",
-			"/projects/proj-abc/control-plane/v1/loki/api/v1/query_range", http.StatusNotFound},
+			"/projects/proj-abc/control-plane/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound},
 	}
 
 	for _, tc := range cases {
@@ -403,7 +403,7 @@ func TestGrafanaHealthProbe(t *testing.T) {
 	get := func(t *testing.T, query string) (int, string) {
 		t.Helper()
 		req, err := http.NewRequest(http.MethodGet,
-			srv.URL+"/v1/loki/api/v1/query?query="+url.QueryEscape(query), nil)
+			srv.URL+"/v1alpha1/logs/loki/api/v1/query?query="+url.QueryEscape(query), nil)
 		if err != nil {
 			t.Fatalf("build request: %v", err)
 		}
@@ -485,7 +485,7 @@ func TestGrafanaHealthProbe(t *testing.T) {
 // segment appearing later in the path is client-controlled data, and must
 // never become the project a query is scoped to.
 func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
-	const crafted = "/v1/loki/api/v1/label/projects/evil-corp/control-plane/v1/loki/api/v1/query"
+	const crafted = "/v1alpha1/logs/loki/api/v1/label/projects/evil-corp/control-plane/v1alpha1/logs/loki/api/v1/query"
 
 	t.Run("no identity at all", func(t *testing.T) {
 		store := &recordingStore{}
