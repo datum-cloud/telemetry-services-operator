@@ -38,6 +38,7 @@ spec:
           csi.cert-manager.io/duration: "2160h"
           csi.cert-manager.io/renew-before: "360h"
           csi.cert-manager.io/key-usages: "client auth"
+          csi.cert-manager.io/fs-group: "65532"
   volumeMounts:
     - name: nats-client-certs
       mountPath: /etc/otel/nats-client
