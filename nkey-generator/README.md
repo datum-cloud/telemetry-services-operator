@@ -4,7 +4,7 @@ Maintains the per-PoP NATS leaf NKey credentials for the o11y telemetry hub.
 
 On each run (scheduled via a CronJob in the hub cluster) the generator:
 
-1. Lists Karmada `Cluster` objects labelled `telemetry.datum.net/nats-leaf=enabled`,
+1. Lists Karmada `Cluster` objects labelled `telemetry.miloapis.com/nats-leaf=enabled`,
    reaching the Karmada API directly with a secretless kubeconfig whose
    `tokenFile` points at a projected ServiceAccount token.
 2. For each cluster, ensures a Secret `nats-leaf-nkey-<cluster>` exists
