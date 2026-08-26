@@ -17,27 +17,30 @@ func TestStripProxyPrefixes(t *testing.T) {
 		path string
 		want string
 	}{
-		{"already trimmed", "/v1/loki/api/v1/query", "/v1/loki/api/v1/query"},
+		{"already trimmed", "/v1alpha1/logs/loki/api/v1/query", "/v1alpha1/logs/loki/api/v1/query"},
 
 		// Grafana omits the datasource URL's subpath, so the bare Loki form
-		// must normalise onto the /v1 routes.
-		{"bare loki path gains /v1", "/loki/api/v1/query", "/v1/loki/api/v1/query"},
-		{"bare loki labels gains /v1", "/loki/api/v1/labels", "/v1/loki/api/v1/labels"},
+		// must normalise onto the /v1alpha1/logs routes.
+		{"bare loki path gains /v1alpha1/logs", "/loki/api/v1/query", "/v1alpha1/logs/loki/api/v1/query"},
+		{"bare loki labels gains /v1alpha1/logs", "/loki/api/v1/labels", "/v1alpha1/logs/loki/api/v1/labels"},
 		{
-			"bare loki label values gains /v1",
+			"bare loki label values gains /v1alpha1/logs",
 			"/loki/api/v1/label/severity/values",
-			"/v1/loki/api/v1/label/severity/values",
+			"/v1alpha1/logs/loki/api/v1/label/severity/values",
 		},
-		{"already /v1-prefixed is untouched", "/v1/loki/api/v1/query", "/v1/loki/api/v1/query"},
-		{"non-loki path is untouched", "/v1/api/v1/query", "/v1/api/v1/query"},
+		{
+			"already /v1alpha1-prefixed is untouched",
+			"/v1alpha1/logs/loki/api/v1/query", "/v1alpha1/logs/loki/api/v1/query",
+		},
+		{"non-loki path is untouched", "/v1alpha1/metrics/api/v1/query", "/v1alpha1/metrics/api/v1/query"},
 
 		// Anchoring: a bare /loki/api/v1 segment is only a route marker when it
 		// leads the path. As a later label-name segment it is client-controlled
 		// data and must survive untouched.
 		{
 			"mid-path bare loki segment is not normalised",
-			"/v1/loki/api/v1/label/loki/api/v1/query/values",
-			"/v1/loki/api/v1/label/loki/api/v1/query/values",
+			"/v1alpha1/logs/loki/api/v1/label/loki/api/v1/query/values",
+			"/v1alpha1/logs/loki/api/v1/label/loki/api/v1/query/values",
 		},
 
 		// The /projects/.../control-plane and /apis/{group} prefixes are
@@ -56,8 +59,8 @@ func TestStripProxyPrefixes(t *testing.T) {
 		},
 		{
 			"mid-path projects segment is left intact",
-			"/v1/loki/api/v1/label/projects/evil-corp/control-plane/v1/loki/api/v1/query",
-			"/v1/loki/api/v1/label/projects/evil-corp/control-plane/v1/loki/api/v1/query",
+			"/v1alpha1/loki/api/v1/label/projects/evil-corp/control-plane/v1alpha1/loki/api/v1/query",
+			"/v1alpha1/loki/api/v1/label/projects/evil-corp/control-plane/v1alpha1/loki/api/v1/query",
 		},
 	}
 
