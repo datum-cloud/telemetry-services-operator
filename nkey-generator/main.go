@@ -2,7 +2,7 @@
 
 // Command nkey-generator provisions per-PoP NATS leaf NKey credentials for the
 // o11y telemetry hub. It runs on a schedule in the hub cluster and, for every
-// Karmada Cluster labelled telemetry.datum.net/nats-leaf=enabled:
+// Karmada Cluster labelled telemetry.miloapis.com/nats-leaf=enabled:
 //
 //   - generates and stores a NATS NKey (seed + public key) in a Secret named
 //     nats-leaf-nkey-<cluster> if it does not yet exist (a regenerated seed
@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	clusterLabel      = "telemetry.datum.net/nats-leaf"
+	clusterLabel      = "telemetry.miloapis.com/nats-leaf"
 	clusterLabelValue = "enabled"
 )
 
@@ -199,7 +199,7 @@ func toAny(ss []string) []any {
 }
 
 // enabledClusters returns the names of Karmada Clusters labelled
-// telemetry.datum.net/nats-leaf=enabled. Any error aborts so the caller never
+// telemetry.miloapis.com/nats-leaf=enabled. Any error aborts so the caller never
 // acts on a partial list.
 func enabledClusters(ctx context.Context, karmada dynamic.Interface) ([]string, error) {
 	list, err := karmada.Resource(clustersGVR).List(ctx, metav1.ListOptions{
@@ -250,8 +250,8 @@ func (g *generator) ensureKey(ctx context.Context, cluster string) (string, erro
 			"name":      secretName,
 			"namespace": g.cfg.namespace,
 			"labels": map[string]any{
-				clusterLabel:                  clusterLabelValue,
-				"telemetry.datum.net/cluster": cluster,
+				clusterLabel:                     clusterLabelValue,
+				"telemetry.miloapis.com/cluster": cluster,
 			},
 		},
 		"type": "Opaque",
