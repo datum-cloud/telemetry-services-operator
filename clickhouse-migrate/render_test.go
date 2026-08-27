@@ -24,6 +24,24 @@ func TestRenderMigrations_Substitutes(t *testing.T) {
 	require.Equal(t, "GRANT SELECT ON logs TO `queryapi-clickhouse-client`;\n", string(got))
 }
 
+func TestRenderMigrations_EmptySrcDirErrors(t *testing.T) {
+	src := t.TempDir()
+	dst := t.TempDir()
+
+	err := renderMigrations(src, dst, map[string]string{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), src)
+}
+
+func TestRenderMigrations_MissingSrcDirErrors(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "does-not-exist")
+	dst := t.TempDir()
+
+	err := renderMigrations(src, dst, map[string]string{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), src)
+}
+
 func TestRenderMigrations_UnresolvedToken(t *testing.T) {
 	src := t.TempDir()
 	dst := t.TempDir()

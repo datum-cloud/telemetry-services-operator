@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
@@ -31,6 +32,12 @@ type config struct {
 	migrationsTable string
 	queryapiUser    string
 }
+
+// safeIdentifierRe restricts CLICKHOUSE_QUERYAPI_USER to characters that
+// cannot break out of the backtick-quoted identifier it's spliced into by
+// renderMigrations. It permits the deployed value
+// "queryapi-clickhouse-client" and the default "queryapi".
+var safeIdentifierRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]*$`)
 
 func configFromEnv() (config, error) {
 	c := config{
@@ -59,6 +66,11 @@ func configFromEnv() (config, error) {
 	if len(missing) > 0 {
 		return config{}, fmt.Errorf("missing required env vars: %v", missing)
 	}
+
+	if !safeIdentifierRe.MatchString(c.queryapiUser) {
+		return config{}, fmt.Errorf("invalid CLICKHOUSE_QUERYAPI_USER %q: must match %s", c.queryapiUser, safeIdentifierRe.String())
+	}
+
 	return c, nil
 }
 

@@ -19,6 +19,9 @@ func renderMigrations(srcDir, dstDir string, vars map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("clickhouse-migrate: glob %s: %w", srcDir, err)
 	}
+	if len(files) == 0 {
+		return fmt.Errorf("clickhouse-migrate: no *.sql files found in %s", srcDir)
+	}
 
 	for _, file := range files {
 		content, err := os.ReadFile(file)
