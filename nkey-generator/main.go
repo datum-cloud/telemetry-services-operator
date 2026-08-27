@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 
 	"github.com/nats-io/nkeys"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -40,6 +41,15 @@ const (
 	clusterLabelValue = "enabled"
 )
 
+// clusterNameRE matches a single DNS label. Karmada Cluster names allow
+// dots, which would shift nkeyUser's subject token count if interpolated
+// unchecked.
+var clusterNameRE = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
+
+func validClusterName(name string) bool {
+	return clusterNameRE.MatchString(name)
+}
+
 var (
 	secretsGVR    = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}
 	configMapsGVR = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}
@@ -56,6 +66,8 @@ type config struct {
 	karmadaKubeconfig string
 	secretPrefix      string
 	configMapName     string
+	secretStoreName   string
+	secretStoreKind   string
 }
 
 type generator struct {
@@ -70,6 +82,8 @@ func configFromEnv() (config, error) {
 		karmadaKubeconfig: os.Getenv("KARMADA_KUBECONFIG"),
 		secretPrefix:      envOr("SECRET_PREFIX", "nats-leaf-nkey"),
 		configMapName:     envOr("AUTHORIZED_LEAFS_CONFIGMAP", "nats-o11y-authorized-leafs"),
+		secretStoreName:   envOr("SECRET_STORE_NAME", "gcp-secret-store"),
+		secretStoreKind:   envOr("SECRET_STORE_KIND", "ClusterSecretStore"),
 	}
 	if c.karmadaKubeconfig == "" {
 		return config{}, fmt.Errorf("missing required env var KARMADA_KUBECONFIG")
@@ -142,6 +156,10 @@ func (g *generator) sync(ctx context.Context, karmada dynamic.Interface) error {
 
 	users := staticUsers()
 	for _, name := range clusters {
+		if !validClusterName(name) {
+			slog.Warn("skipping cluster with invalid name for NATS subject use", "cluster", name)
+			continue
+		}
 		pub, err := g.ensureKey(ctx, name)
 		if err != nil {
 			return err
@@ -290,7 +308,7 @@ func (g *generator) ensurePushSecret(ctx context.Context, cluster, secretName st
 			"deletionPolicy":  "None",
 			"refreshInterval": "1h",
 			"secretStoreRefs": []any{
-				map[string]any{"name": "gcp-secret-store", "kind": "ClusterSecretStore"},
+				map[string]any{"name": g.cfg.secretStoreName, "kind": g.cfg.secretStoreKind},
 			},
 			"selector": map[string]any{
 				"secret": map[string]any{"name": secretName},
@@ -316,9 +334,10 @@ func (g *generator) ensurePushSecret(ctx context.Context, cluster, secretName st
 	return err
 }
 
-// nkeyUser builds the narrow per-PoP leaf NKey user block. The cluster token
-// comes before any project token because the allowlist is a prefix match, so
-// the cluster is the outer token. Never widen these to ">".
+// nkeyUser builds the narrow per-PoP leaf NKey user block. Never widen these
+// to ">" or grant $JS.API.* -- JetStream API access lets a holder create a
+// consumer over another PoP's subjects and read it back via _INBOX.>,
+// bypassing the publish scoping below entirely.
 func nkeyUser(cluster, publicKey string) map[string]any {
 	return permissionsMap(
 		map[string]string{"nkey": publicKey},
@@ -326,17 +345,75 @@ func nkeyUser(cluster, publicKey string) map[string]any {
 			"o11y.logs." + cluster + ".*",
 			"o11y.metrics." + cluster + ".*",
 			"o11y.traces." + cluster + ".*",
-			"$JS.API.>",
-			"$JS.hub.API.>",
 		},
 		[]string{"_INBOX.>"},
 	)
 }
 
+// droppedNkeys returns the nkey public keys present in prev but absent from
+// next. Static CN-mapped users have no "nkey" field and are excluded.
+func droppedNkeys(prev, next []map[string]any) []string {
+	have := make(map[string]bool, len(next))
+	for _, u := range next {
+		if pub, ok := u["nkey"].(string); ok {
+			have[pub] = true
+		}
+	}
+	var dropped []string
+	for _, u := range prev {
+		pub, ok := u["nkey"].(string)
+		if !ok {
+			continue
+		}
+		if !have[pub] {
+			dropped = append(dropped, pub)
+		}
+	}
+	return dropped
+}
+
+// previousUsers reads the currently-applied ConfigMap's accounts.O11Y.users
+// list. A missing ConfigMap or unparseable values.yaml is treated as "no
+// previous users" -- nothing to protect against shrinking yet.
+func (g *generator) previousUsers(ctx context.Context, name string) []map[string]any {
+	res := g.dyn.Resource(configMapsGVR).Namespace(g.cfg.namespace)
+	obj, err := res.Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return nil
+	}
+	raw, found, err := unstructured.NestedString(obj.Object, "data", "values.yaml")
+	if err != nil || !found {
+		return nil
+	}
+	var doc struct {
+		Config struct {
+			Merge struct {
+				Accounts struct {
+					O11Y struct {
+						Users []map[string]any `json:"users"`
+					} `json:"O11Y"`
+				} `json:"accounts"`
+			} `json:"merge"`
+		} `json:"config"`
+	}
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+	return doc.Config.Merge.Accounts.O11Y.Users
+}
+
 // writeConfigMap rewrites the authorized-leafs ConfigMap the hub HelmRelease
 // reads via valuesFrom. data values.yaml carries the full O11Y account block,
-// so the generator is the single source of truth for account users.
+// so the generator is the single source of truth for account users. Before
+// writing, it refuses to silently drop a previously-authorized leaf nkey --
+// a transient Karmada listing glitch must not deauthorize a live PoP without
+// a human noticing.
 func (g *generator) writeConfigMap(ctx context.Context, users []map[string]any) error {
+	prev := g.previousUsers(ctx, g.cfg.configMapName)
+	if dropped := droppedNkeys(prev, users); len(dropped) > 0 {
+		return fmt.Errorf("refusing to write authorized-leafs: %d previously-authorized nkey(s) would be dropped: %v (if this is an intentional PoP decommission, delete its Secret %s-<cluster> and retry)", len(dropped), dropped, g.cfg.secretPrefix)
+	}
+
 	valuesDoc := map[string]any{
 		"config": map[string]any{
 			"merge": map[string]any{

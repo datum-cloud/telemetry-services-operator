@@ -51,8 +51,6 @@ func TestNkeyUserAllowlist(t *testing.T) {
 		"o11y.logs.us-east-1.*",
 		"o11y.metrics.us-east-1.*",
 		"o11y.traces.us-east-1.*",
-		"$JS.API.>",
-		"$JS.hub.API.>",
 	}
 	if len(publish) != len(expected) {
 		t.Fatalf("publish allow len=%d want %d: %v", len(publish), len(expected), publish)
@@ -63,9 +61,14 @@ func TestNkeyUserAllowlist(t *testing.T) {
 		}
 	}
 
-	// The whole point: never widen a leaf to publish any PoP's subjects.
+	// The whole point: a leaf must never get JetStream API access. $JS.API.>
+	// lets a holder create a consumer filtered to another PoP's subjects and
+	// pull it via the allowed _INBOX.> subscribe -- that's a full bypass of
+	// the subject allowlist above, not just an admin-plane nicety.
 	for _, allow := range publish {
-		if allow == ">" || strings.HasPrefix(allow, "o11y.logs.*") {
+		if allow == ">" ||
+			strings.HasPrefix(allow, "o11y.logs.*") ||
+			strings.HasPrefix(allow, "$JS.") {
 			t.Fatalf("leaf allowlist widened beyond its own PoP: %q", allow)
 		}
 	}
@@ -73,6 +76,64 @@ func TestNkeyUserAllowlist(t *testing.T) {
 	sub := mustStrSlice(t, u, "subscribe")
 	if len(sub) != 1 || sub[0] != "_INBOX.>" {
 		t.Fatalf("subscribe allow = %v, want [_INBOX.>]", sub)
+	}
+}
+
+func TestValidClusterName(t *testing.T) {
+	valid := []string{"us-east-1", "edge-pop-42", "a", "a1"}
+	for _, name := range valid {
+		if !validClusterName(name) {
+			t.Errorf("validClusterName(%q) = false, want true", name)
+		}
+	}
+
+	// Subject-metacharacters or multi-token names must never reach
+	// nkeyUser's string interpolation, even though Karmada Cluster names are
+	// DNS-1123 subdomains today (which permit '.') -- a single dot silently
+	// changes the subject's token count from the fixed 3-token shape the
+	// rest of the system assumes.
+	invalid := []string{"a.b", "a>", "a*", "a b", "", strings.Repeat("a", 254)}
+	for _, name := range invalid {
+		if validClusterName(name) {
+			t.Errorf("validClusterName(%q) = true, want false", name)
+		}
+	}
+}
+
+func TestDroppedNkeysDetection(t *testing.T) {
+	prev := []map[string]any{
+		nkeyUser("us-east-1", "UD5ULF5HDXSAB42CKHYDGDQ5E53AJNSXYW72MEYMHNVGAQKNRZS55H5N"),
+		nkeyUser("us-west-1", "UAAAA5HDXSAB42CKHYDGDQ5E53AJNSXYW72MEYMHNVGAQKNRZS55H5N"),
+	}
+	// us-west-1's nkey user vanished from the new set -- must be caught.
+	next := []map[string]any{
+		nkeyUser("us-east-1", "UD5ULF5HDXSAB42CKHYDGDQ5E53AJNSXYW72MEYMHNVGAQKNRZS55H5N"),
+	}
+
+	dropped := droppedNkeys(prev, next)
+	if len(dropped) != 1 || dropped[0] != "UAAAA5HDXSAB42CKHYDGDQ5E53AJNSXYW72MEYMHNVGAQKNRZS55H5N" {
+		t.Fatalf("droppedNkeys = %v, want the us-west-1 public key", dropped)
+	}
+
+	// A rotated key for the same cluster is also a drop of the old key --
+	// that's still correct: the old key really is no longer authorized.
+	if len(droppedNkeys(prev, prev)) != 0 {
+		t.Fatalf("identical sets must report no drops")
+	}
+}
+
+func TestConfigFromEnvSecretStoreDefaults(t *testing.T) {
+	t.Setenv("KARMADA_KUBECONFIG", "/tmp/kubeconfig")
+
+	cfg, err := configFromEnv()
+	if err != nil {
+		t.Fatalf("configFromEnv: %v", err)
+	}
+	if cfg.secretStoreName != "gcp-secret-store" {
+		t.Fatalf("secretStoreName = %q, want gcp-secret-store", cfg.secretStoreName)
+	}
+	if cfg.secretStoreKind != "ClusterSecretStore" {
+		t.Fatalf("secretStoreKind = %q, want ClusterSecretStore", cfg.secretStoreKind)
 	}
 }
 
