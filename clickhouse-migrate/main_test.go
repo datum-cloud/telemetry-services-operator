@@ -35,6 +35,7 @@ func TestConfigFromEnv_Defaults(t *testing.T) {
 	require.Equal(t, "9440", cfg.port)
 	require.Equal(t, "/migrations", cfg.migrationsDir)
 	require.Equal(t, "/etc/clickhouse-client/certs/tls.crt", cfg.tlsCertFile)
+	require.Equal(t, "queryapi", cfg.queryapiUser)
 }
 
 func TestQuoteIdentifier(t *testing.T) {

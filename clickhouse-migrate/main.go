@@ -29,6 +29,7 @@ type config struct {
 	tlsKeyFile      string
 	tlsCAFile       string
 	migrationsTable string
+	queryapiUser    string
 }
 
 func configFromEnv() (config, error) {
@@ -42,6 +43,7 @@ func configFromEnv() (config, error) {
 		tlsKeyFile:      envOr("CLICKHOUSE_TLS_KEY_FILE", "/etc/clickhouse-client/certs/tls.key"),
 		tlsCAFile:       envOr("CLICKHOUSE_TLS_CA_FILE", "/etc/clickhouse-client/certs/ca.crt"),
 		migrationsTable: envOr("MIGRATIONS_TABLE", chmigrate.DefaultMigrationsTable),
+		queryapiUser:    envOr("CLICKHOUSE_QUERYAPI_USER", "queryapi"),
 	}
 
 	var missing []string
@@ -152,6 +154,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	renderedDir, err := os.MkdirTemp("", "clickhouse-migrate-rendered-")
+	if err != nil {
+		return fmt.Errorf("creating rendered migrations dir: %w", err)
+	}
+	defer os.RemoveAll(renderedDir)
+	if err := renderMigrations(cfg.migrationsDir, renderedDir, map[string]string{
+		"QUERYAPI_USER": cfg.queryapiUser,
+	}); err != nil {
+		return err
+	}
+	cfg.migrationsDir = renderedDir
 
 	tlsConfig, err := loadClientTLSConfig(cfg.tlsCertFile, cfg.tlsKeyFile, cfg.tlsCAFile)
 	if err != nil {
