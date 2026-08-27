@@ -22,9 +22,18 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 	}
 
 	const database = "o11y_migrate_test"
+	const queryapiUser = "queryapi"
+
+	renderedDir := t.TempDir()
+	require.NoError(t, renderMigrations(
+		"../config/clickhouse-migrations/migrations",
+		renderedDir,
+		map[string]string{"QUERYAPI_USER": queryapiUser},
+	))
+
 	cfg := config{
 		database:      database,
-		migrationsDir: "../config/clickhouse-migrations/migrations",
+		migrationsDir: renderedDir,
 	}
 
 	opts := &clickhousego.Options{
@@ -35,8 +44,6 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 		},
 	}
 
-	// Bootstrap connection: not scoped to the target database, so it can
-	// create it (and drop any leftovers from a previous run).
 	bootstrap := clickhousego.OpenDB(opts)
 	t.Cleanup(func() { require.NoError(t, bootstrap.Close()) })
 
@@ -45,14 +52,13 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 	_, err = bootstrap.Exec("CREATE DATABASE " + quoteIdentifier(database))
 	require.NoError(t, err)
 
-	// The 000001 migration GRANTs and row-policies ops and queryapi, which exist
-	// on the real server via ssl_auth.xml certificate mapping. That layer is
-	// absent here, so create the users for the migration to apply to.
+	// The 000001 migration GRANTs and row-policies ops and queryapiUser, which
+	// exist on the real server via ssl_auth.xml certificate mapping. That layer
+	// is absent here, so create the users for the migration to apply to. The
+	// settings_allow_custom_setting_* grant is now part of the migration itself
+	// (Task 2) -- no manual workaround grant here anymore.
 	createTestUser(t, bootstrap, "ops")
-	createTestUser(t, bootstrap, "queryapi")
-	// queryapi needs custom-setting rights for the row policy.
-	_, err = bootstrap.Exec("GRANT settings_allow_custom_setting_read, settings_allow_custom_setting_write ON *.* TO queryapi")
-	require.NoError(t, err)
+	createTestUser(t, bootstrap, queryapiUser)
 
 	scoped := *opts
 	scoped.Auth.Database = database
@@ -64,8 +70,6 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 	require.False(t, dirty, "migrations left the database dirty at version %d", version)
 	require.Equal(t, uint(1), version)
 
-	// Re-running must be a no-op, not an error: the Job retries on failure
-	// and gets re-applied on every deploy.
 	version, dirty, err = applyMigrations(db, cfg)
 	require.NoError(t, err)
 	require.False(t, dirty)
@@ -78,12 +82,12 @@ func TestApplyMigrations_FreshDatabase(t *testing.T) {
 	).Scan(&count))
 	require.Equal(t, uint64(1), count, "expected the logs table to exist")
 
-	assertRestrictedQueryapi(t, db, database)
+	assertRestrictedQueryapi(t, db, database, queryapiUser)
 }
 
 // assertRestrictedQueryapi verifies the 000001 migration installed the queryapi
 // row policy and read-only grant. Requires the queryapi user to exist.
-func assertRestrictedQueryapi(t *testing.T, db *sql.DB, database string) {
+func assertRestrictedQueryapi(t *testing.T, db *sql.DB, database, queryapiUser string) {
 	t.Helper()
 
 	var policies uint64
@@ -93,13 +97,19 @@ func assertRestrictedQueryapi(t *testing.T, db *sql.DB, database string) {
 	).Scan(&policies))
 	require.Equal(t, uint64(1), policies, "expected the queryapi_project_isolation row policy on logs")
 
-	// ops keeps full read; queryapi is confined to SELECT on logs.
 	var grants string
 	require.NoError(t, db.QueryRow(
-		"SELECT access_type FROM system.grants WHERE user_name = 'queryapi' AND (database, table) = (?, 'logs')",
-		database,
+		"SELECT access_type FROM system.grants WHERE user_name = ? AND (database, table) = (?, 'logs')",
+		queryapiUser, database,
 	).Scan(&grants))
 	require.Equal(t, "SELECT", grants, "queryapi must be read-only (SELECT) on logs")
+
+	var customSettingGrants uint64
+	require.NoError(t, db.QueryRow(
+		"SELECT count() FROM system.grants WHERE user_name = ? AND access_type IN ('SETTINGS_ALLOW_CUSTOM_SETTING_READ', 'SETTINGS_ALLOW_CUSTOM_SETTING_WRITE')",
+		queryapiUser,
+	).Scan(&customSettingGrants))
+	require.Equal(t, uint64(2), customSettingGrants, "expected both custom-setting grants needed for telemetry_project_id")
 }
 
 // createTestUser creates a throwaway user for integration testing, dropping any
