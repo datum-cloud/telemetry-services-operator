@@ -39,18 +39,23 @@ ORDER BY (ProjectId, ObservedTimestamp, ServiceName);
 
 -- Authorization.
 --
--- Two users share this table: ops (full read, provider-defined) and queryapi
--- (the HTTP query layer, whose identity is certificate-mapped in the
--- provider's users.d/ssl_auth.xml). queryapi is granted SELECT only and is
--- row-scoped by a policy keyed on the per-query custom setting
--- telemetry_project_id the query layer sets (a query without it matches no
--- rows). The deployment must enable allow_custom_settings = 1 for queryapi and
--- expose the setting in config.d.
+-- Two users share this table: ops (full read, provider-defined) and the
+-- query-serving identity (the HTTP query layer, whose ClickHouse identity is
+-- certificate-mapped in the provider's users.d/ssl_auth.xml). That identity's
+-- literal username varies per deployment, so it is injected at migration
+-- render time as {{QUERYAPI_USER}} (see clickhouse-migrate's
+-- CLICKHOUSE_QUERYAPI_USER env var). It is granted SELECT only, scoped to
+-- this database, plus the two privileges ClickHouse requires before a user
+-- may read or set a custom setting -- without these, every query fails with
+-- "unknown setting" the moment it tries to set telemetry_project_id -- and is
+-- row-scoped by a policy keyed on that per-query custom setting the query
+-- layer sets (a query without it matches no rows).
 
-GRANT SELECT ON logs TO queryapi;
+GRANT SELECT ON logs TO `{{QUERYAPI_USER}}`;
+GRANT settings_allow_custom_setting_read, settings_allow_custom_setting_write ON *.* TO `{{QUERYAPI_USER}}`;
 
 CREATE ROW POLICY IF NOT EXISTS queryapi_project_isolation
 ON logs
 FOR SELECT
 USING ProjectId = getSetting('telemetry_project_id')
-TO queryapi;
+TO `{{QUERYAPI_USER}}`;

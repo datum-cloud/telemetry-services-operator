@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"regexp"
 	"strings"
 
 	clickhousego "github.com/ClickHouse/clickhouse-go/v2"
@@ -29,7 +30,14 @@ type config struct {
 	tlsKeyFile      string
 	tlsCAFile       string
 	migrationsTable string
+	queryapiUser    string
 }
+
+// safeIdentifierRe restricts CLICKHOUSE_QUERYAPI_USER to characters that
+// cannot break out of the backtick-quoted identifier it's spliced into by
+// renderMigrations. It permits the deployed value
+// "queryapi-clickhouse-client" and the default "queryapi".
+var safeIdentifierRe = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]*$`)
 
 func configFromEnv() (config, error) {
 	c := config{
@@ -42,6 +50,7 @@ func configFromEnv() (config, error) {
 		tlsKeyFile:      envOr("CLICKHOUSE_TLS_KEY_FILE", "/etc/clickhouse-client/certs/tls.key"),
 		tlsCAFile:       envOr("CLICKHOUSE_TLS_CA_FILE", "/etc/clickhouse-client/certs/ca.crt"),
 		migrationsTable: envOr("MIGRATIONS_TABLE", chmigrate.DefaultMigrationsTable),
+		queryapiUser:    envOr("CLICKHOUSE_QUERYAPI_USER", "queryapi"),
 	}
 
 	var missing []string
@@ -57,6 +66,11 @@ func configFromEnv() (config, error) {
 	if len(missing) > 0 {
 		return config{}, fmt.Errorf("missing required env vars: %v", missing)
 	}
+
+	if !safeIdentifierRe.MatchString(c.queryapiUser) {
+		return config{}, fmt.Errorf("invalid CLICKHOUSE_QUERYAPI_USER %q: must match %s", c.queryapiUser, safeIdentifierRe.String())
+	}
+
 	return c, nil
 }
 
@@ -152,6 +166,22 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	renderedDir, err := os.MkdirTemp("", "clickhouse-migrate-rendered-")
+	if err != nil {
+		return fmt.Errorf("creating rendered migrations dir: %w", err)
+	}
+	defer func() {
+		if err := os.RemoveAll(renderedDir); err != nil {
+			logger.Error("removing rendered migrations dir", "error", err)
+		}
+	}()
+	if err := renderMigrations(cfg.migrationsDir, renderedDir, map[string]string{
+		"QUERYAPI_USER": cfg.queryapiUser,
+	}); err != nil {
+		return err
+	}
+	cfg.migrationsDir = renderedDir
 
 	tlsConfig, err := loadClientTLSConfig(cfg.tlsCertFile, cfg.tlsKeyFile, cfg.tlsCAFile)
 	if err != nil {
