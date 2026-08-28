@@ -171,7 +171,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("creating rendered migrations dir: %w", err)
 	}
-	defer os.RemoveAll(renderedDir)
+	defer func() {
+		if err := os.RemoveAll(renderedDir); err != nil {
+			logger.Error("removing rendered migrations dir", "error", err)
+		}
+	}()
 	if err := renderMigrations(cfg.migrationsDir, renderedDir, map[string]string{
 		"QUERYAPI_USER": cfg.queryapiUser,
 	}); err != nil {
