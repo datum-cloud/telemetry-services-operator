@@ -5,7 +5,7 @@ go 1.25.0
 godebug default=go1.23
 
 require (
-	github.com/VictoriaMetrics/metricsql v0.84.3
+	github.com/VictoriaMetrics/metricsql v0.87.3
 	github.com/onsi/ginkgo/v2 v2.23.4
 	github.com/onsi/gomega v1.37.0
 	github.com/stretchr/testify v1.11.1
@@ -20,7 +20,7 @@ require (
 
 require (
 	cel.dev/expr v0.25.1 // indirect
-	github.com/VictoriaMetrics/metrics v1.34.0 // indirect
+	github.com/VictoriaMetrics/metrics v1.35.3 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver/v4 v4.0.0 // indirect
