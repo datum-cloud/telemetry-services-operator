@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Command queryapi serves the telemetry query layer HTTP API. See
-// ../openapi.yaml for the request/response contract.
+// Command queryapi serves the telemetry query layer's API. It is a Kubernetes
+// aggregated API server that serves Loki- and Prometheus-shaped routes rather
+// than Kubernetes resources; see ../openapi.yaml for the request/response
+// contract and ../docs/authorization.md for how requests are authorized.
 package main
 
 import (
 	"context"
-	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
+
+	"github.com/spf13/pflag"
 
 	"go.datum.net/o11y/queryapi"
 	"go.datum.net/o11y/queryapi/internal/storage"
@@ -24,61 +23,49 @@ import (
 )
 
 func main() {
-	var cfg queryapi.Config
-	queryapi.RegisterFlags(flag.CommandLine, &cfg)
-	flag.Parse()
-
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-
-	if err := cfg.Validate(); err != nil {
-		logger.Error("invalid configuration", "error", err)
+	if err := run(logger, os.Args[1:]); err != nil {
+		logger.Error("query api exited", "error", err)
 		os.Exit(1)
 	}
+}
 
-	store, err := newStore(cfg)
+// run holds the whole process so that every deferred close still happens; main
+// only turns the error into an exit code.
+func run(logger *slog.Logger, args []string) error {
+	opts := queryapi.NewOptions()
+	fs := pflag.NewFlagSet("queryapi", pflag.ExitOnError)
+	opts.AddFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return fmt.Errorf("parse flags: %w", err)
+	}
+	if err := opts.Validate(); err != nil {
+		return fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	store, err := newStore(opts.Query)
 	if err != nil {
-		logger.Error("configure storage", "error", err)
-		os.Exit(1)
-	}
-	if closer, ok := store.(io.Closer); ok {
-		defer func() {
-			if err := closer.Close(); err != nil {
-				logger.Error("close storage", "error", err)
-			}
-		}()
+		return fmt.Errorf("configure storage: %w", err)
 	}
 
-	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           queryapi.NewHandler(logger, store, cfg),
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
-		IdleTimeout:       cfg.IdleTimeout,
+	cfg, err := opts.Config(logger, store)
+	if err != nil {
+		return err
+	}
+	completed, err := cfg.Complete()
+	if err != nil {
+		return err
+	}
+	server, err := completed.New()
+	if err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	serveErr := make(chan error, 1)
-	go func() {
-		logger.Info("starting query api", "addr", cfg.Addr)
-		serveErr <- srv.ListenAndServe()
-	}()
-
-	select {
-	case err := <-serveErr:
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("query api server exited", "error", err)
-			os.Exit(1)
-		}
-	case <-ctx.Done():
-		logger.Info("shutting down query api")
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := srv.Shutdown(shutdownCtx); err != nil {
-			logger.Error("query api shutdown did not complete cleanly", "error", err)
-			os.Exit(1)
-		}
-	}
+	logger.Info("serving query api", "port", opts.Recommended.SecureServing.BindPort)
+	return server.Run(ctx)
 }
 
 // newStore builds the configured storage backend.

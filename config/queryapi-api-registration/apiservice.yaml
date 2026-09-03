@@ -1,13 +1,26 @@
+# queryapi serves HTTPS, so the aggregator needs something to verify the
+# serving certificate with. cert-manager's cainjector copies the CA out of the
+# secret named by config/queryapi/certificate.yaml into spec.caBundle here;
+# insecureSkipTLSVerify stays false so that a missing or stale bundle fails
+# loudly instead of silently accepting any certificate.
+#
+# Environments without cainjector must either set caBundle themselves or patch
+# insecureSkipTLSVerify to true, the way activity's dev and test-infra overlays
+# do. Doing the latter gives up verification of the backend, not of callers:
+# the requestheader check queryapi runs on inbound requests is unaffected.
 apiVersion: apiregistration.k8s.io/v1
 kind: APIService
 metadata:
   name: v1alpha1.o11y.miloapis.com
+  annotations:
+    cert-manager.io/inject-ca-from: o11y-system/queryapi-serving-cert
 spec:
   service:
     name: queryapi
     namespace: o11y-system
-    port: 8080
+    port: 443
   group: o11y.miloapis.com
   version: v1alpha1
+  insecureSkipTLSVerify: false
   groupPriorityMinimum: 1000
   versionPriority: 15

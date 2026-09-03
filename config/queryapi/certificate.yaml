@@ -1,0 +1,44 @@
+# queryapi terminates TLS itself, and that is load-bearing rather than
+# cosmetic: the delegating authenticator only verifies the forwarded X-Remote-*
+# identity when the connection carries a client certificate it can check
+# against the front proxy's CA. Over plain HTTP there is nothing to check, so
+# the identity would be believed on the strength of network topology alone.
+# Serving TLS is what makes the requestheader client-CA check fire.
+#
+# cert-manager issues the serving certificate. The issuer is self-signed,
+# matching config/operator/certmanager/issuer.yaml; the aggregator learns to
+# trust it through the cert-manager.io/inject-ca-from annotation on
+# config/queryapi-api-registration/apiservice.yaml, which cainjector fills in
+# from this certificate's secret.
+#
+# The namespace appears in dnsNames because a serving certificate has to name
+# the address clients dial. o11y-system is the namespace
+# queryapi-api-registration/apiservice.yaml already points the APIService at
+# and the one rbac.yaml binds its subjects in; a consumer deploying elsewhere
+# must patch all three together.
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: queryapi-selfsigned-issuer
+  labels:
+    app.kubernetes.io/name: queryapi
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: queryapi-serving-cert
+  labels:
+    app.kubernetes.io/name: queryapi
+spec:
+  secretName: queryapi-serving-cert
+  dnsNames:
+    - queryapi.o11y-system.svc
+    - queryapi.o11y-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: queryapi-selfsigned-issuer
+  privateKey:
+    algorithm: ECDSA
+    size: 256

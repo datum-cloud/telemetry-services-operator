@@ -15,7 +15,11 @@ spec:
       labels:
         app.kubernetes.io/name: queryapi
     spec:
-      automountServiceAccountToken: false
+      # queryapi authenticates to Milo as itself, both to read the front
+      # proxy's client CA out of kube-system and to ask Milo whether a caller
+      # may read a project's telemetry, so it needs its token (see rbac.yaml).
+      serviceAccountName: queryapi
+      automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
         seccompProfile:
@@ -28,22 +32,52 @@ spec:
             # --storage=clickhouse and supply CLICKHOUSE_* env plus a client
             # certificate volume once it can.
             - --storage=fake
-            - --addr=:8080
-            # --trust-project-header is deliberately absent: X-Project-Id is
-            # client-controlled, so only the proxy-set identity is trusted here.
+            # TLS is the whole point of the identity chain, not a hardening
+            # extra: only a TLS connection carries the front proxy's client
+            # certificate, and only that certificate makes the forwarded
+            # X-Remote-* headers worth believing. The pair is issued by
+            # cert-manager (certificate.yaml) and mounted below.
+            - --secure-port=8443
+            - --tls-cert-file=/var/run/queryapi/tls/tls.crt
+            - --tls-private-key-file=/var/run/queryapi/tls/tls.key
+            # Empty means in-cluster, as in activity's deployment: the mounted
+            # service account token reaches Milo's apiserver, which is where
+            # the requestheader client CA, TokenReview and SubjectAccessReview
+            # all live.
+            - --authentication-kubeconfig=
+            - --authorization-kubeconfig=
+            # Empty means "read the CA from the extension-apiserver-authentication
+            # ConfigMap in kube-system" rather than from a file, which is what
+            # the RoleBinding in rbac.yaml grants. Set this only to pin a CA
+            # file instead.
+            - --requestheader-client-ca-file=
+            # The paths served without a SubjectAccessReview. The probes below
+            # and the metrics scraper present no credentials, and the framework
+            # default omits /metrics. Nothing listed here can open a query
+            # route: those are resource requests by the time they are
+            # authorized, and the path authorizer abstains on every one of
+            # those. queryapi refuses to start if this names its own API group.
+            - --authorization-always-allow-paths=/healthz,/readyz,/livez,/metrics
+            # There is deliberately no flag that lets a caller name its own
+            # project. Tenancy comes from the verified identity's
+            # iam.miloapis.com/parent-name extra -- which the delegating
+            # authorizer copies into the SubjectAccessReview for Milo to
+            # evaluate -- and from nowhere else.
           ports:
-            - name: http
-              containerPort: 8080
+            - name: https
+              containerPort: 8443
           livenessProbe:
             httpGet:
               path: /healthz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 5
             periodSeconds: 20
           readinessProbe:
             httpGet:
               path: /readyz
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 2
             periodSeconds: 10
           securityContext:
@@ -58,3 +92,11 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          volumeMounts:
+            - name: serving-cert
+              mountPath: /var/run/queryapi/tls
+              readOnly: true
+      volumes:
+        - name: serving-cert
+          secret:
+            secretName: queryapi-serving-cert

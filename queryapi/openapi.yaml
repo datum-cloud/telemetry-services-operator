@@ -86,6 +86,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -111,6 +113,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -136,6 +140,8 @@ paths:
                 $ref: "#/components/schemas/StringListResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -179,6 +185,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -226,6 +234,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -254,6 +264,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -282,6 +294,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -323,6 +337,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -356,6 +372,8 @@ paths:
                 $ref: "#/components/schemas/StringListResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -397,6 +415,8 @@ paths:
           $ref: "#/components/responses/BadQuery"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         default:
           $ref: "#/components/responses/UnexpectedError"
 
@@ -471,11 +491,28 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
-      description: Missing or invalid bearer token.
+      description: >-
+        The caller could not be identified: no verified front-proxy identity
+        and no usable bearer token. Written by the apiserver runtime's own
+        authentication filter, so the body is a Kubernetes Status rather than
+        the Loki error envelope the handlers use.
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/ErrorResponse"
+            $ref: "#/components/schemas/StatusResponse"
+    Forbidden:
+      description: >-
+        The caller was identified but is not authorized to read this project's
+        telemetry, is acting outside a project, or asked for a path this
+        service does not serve. Written by the apiserver runtime's own
+        authorization filter, so the body is a Kubernetes Status. A review
+        that could not be completed at all is a 500 rather than a 403 -- an
+        unreachable authorizer is an outage, never an allowance -- and is
+        never a 200.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StatusResponse"
     UnexpectedError:
       description: >-
         Any error status not explicitly listed above, including 501 Not
@@ -503,6 +540,30 @@ components:
           example: bad_data
         error:
           type: string
+
+    StatusResponse:
+      type: object
+      description: >-
+        A Kubernetes metav1.Status, as written by the apiserver runtime's
+        authentication and authorization filters. queryapi's own handlers use
+        ErrorResponse; these two statuses are decided before a handler runs.
+      required: [kind, apiVersion, status, code]
+      properties:
+        kind:
+          type: string
+          enum: [Status]
+        apiVersion:
+          type: string
+          enum: ["v1"]
+        status:
+          type: string
+          enum: [Failure]
+        message:
+          type: string
+        reason:
+          type: string
+        code:
+          type: integer
 
     StringListResponse:
       type: object

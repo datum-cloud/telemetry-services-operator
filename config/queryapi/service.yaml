@@ -8,6 +8,10 @@ spec:
   selector:
     app.kubernetes.io/name: queryapi
   ports:
-    - name: http
-      port: 8080
-      targetPort: http
+    # 443 in front of the container's 8443, matching the activity service, so
+    # the APIService can name the port without repeating the container's.
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+      appProtocol: https

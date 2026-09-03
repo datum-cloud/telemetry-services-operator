@@ -5,6 +5,8 @@ resources:
   - deployment.yaml
   - service.yaml
   - networkpolicy.yaml
+  - rbac.yaml
+  - certificate.yaml
 
 images:
   - name: ghcr.io/milo-os/o11y/queryapi
