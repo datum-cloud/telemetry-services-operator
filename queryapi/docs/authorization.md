@@ -14,7 +14,16 @@ queryapi runs on `k8s.io/apiserver`'s `GenericAPIServer`, and takes three
 things from it:
 
 - **Serving.** TLS from `SecureServingOptions`, with a cert-manager
-  certificate.
+  certificate. In the cluster that certificate arrives through the
+  `csi.cert-manager.io` driver -- an ephemeral volume, one certificate per pod,
+  issued at mount time against an issuer the consumer owns -- so no
+  `Certificate` object and no long-lived `Secret` holding the private key exist
+  for it. That is a deployment detail with one visible consequence: the
+  APIService's `caBundle` is injected from the issuing CA's `Secret` rather
+  than from a `Certificate`. See
+  [`config/queryapi/deployment.yaml`](../../config/queryapi/deployment.yaml)
+  and
+  [`config/queryapi-api-registration/apiservice.yaml`](../../config/queryapi-api-registration/apiservice.yaml).
 - **Authentication.** `DelegatingAuthenticationOptions`: the front proxy's
   client certificate is verified against the CA in the
   `extension-apiserver-authentication` ConfigMap before the `X-Remote-*`

@@ -53,6 +53,11 @@ Serving, authentication and authorization come from `k8s.io/apiserver`'s
 takes and they mean the same things here. `--help` lists all of them; these are
 the ones that matter.
 
+The table below is what the *binary* defaults to. In the cluster none of these
+values is written as a literal: every flag the deployment sets is spelled
+`--flag=$(ENV_VAR)` against an env var, so that a consumer can override one of
+them without restating the rest. See [Deployment](#deployment).
+
 | Flag | Default |
 | --- | --- |
 | `--secure-port` | `8443` (HTTPS only; it cannot be turned off) |
@@ -220,6 +225,102 @@ keeps unauthenticated traffic off the listener entirely. It is no longer what
 makes the forwarded identity trustworthy -- the client-CA check is -- but it is
 still worth having, and it is also what limits who can assert
 `system:masters`.
+
+## Deployment
+
+[`config/queryapi/`](../config/queryapi/) is the bundle. It is deliberately not
+self-sufficient: it names three things the consumer owns, and applying it
+without patching them will not work.
+
+| PLACEHOLDER | Where | What to supply |
+| --- | --- | --- |
+| `PLACEHOLDER-issuer` | `deployment.yaml`, `csi.cert-manager.io/issuer-name` | The `ClusterIssuer` that signs the serving certificate. In `datum-cloud/infra` this is the `o11y-system` one. |
+| `PLACEHOLDER-milo-namespace` | `networkpolicy.yaml` | The namespace running `milo-apiserver`. |
+| `PLACEHOLDER-issuer-ca` | [`config/queryapi-api-registration/apiservice.yaml`](../config/queryapi-api-registration/apiservice.yaml), `cert-manager.io/inject-ca-from-secret` | The `Secret` holding that issuer's CA, so cainjector can fill the APIService's `caBundle`. |
+
+### The serving certificate
+
+TLS is not optional here -- only a TLS connection carries the front proxy's
+client certificate, and only that certificate makes the forwarded `X-Remote-*`
+headers worth believing -- but no `Certificate` object and no long-lived
+`Secret` full of private key exist for it. The pair comes from the
+**cert-manager CSI driver**, the same way the collectors get their NATS
+certificates: an ephemeral volume, one certificate per pod, issued at mount
+time and renewed in place.
+
+```yaml
+- name: serving-cert
+  csi:
+    driver: csi.cert-manager.io
+    volumeAttributes:
+      csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
+      csi.cert-manager.io/issuer-kind: ClusterIssuer
+      csi.cert-manager.io/dns-names: "queryapi.o11y-system.svc,queryapi.o11y-system.svc.cluster.local"
+      csi.cert-manager.io/key-usages: "server auth"
+```
+
+`server auth` and the `dnsNames` are what make it a *serving* certificate: it
+has to name the addresses the aggregator dials. `o11y-system` appears there,
+in `apiservice.yaml`, and in `rbac.yaml`'s subjects; a consumer deploying
+elsewhere patches all three together.
+
+The consequence for the aggregator is that there is no `Certificate` to point
+`cert-manager.io/inject-ca-from` at any more. The APIService names the issuing
+CA's `Secret` instead (`cert-manager.io/inject-ca-from-secret`), which is the
+thing the aggregator actually has to trust; that `Secret` needs
+`cert-manager.io/allow-direct-injection: "true"` on it before cainjector will
+read it. `insecureSkipTLSVerify` stays `false`. `apiservice.yaml` documents the
+two alternatives -- patching `caBundle` by hand, or giving up backend
+verification -- and when each is defensible.
+
+### Overriding a flag
+
+`args` is a list, and a strategic merge patch replaces a list wholesale: a
+consumer overriding one flag would have to restate every other one, and would
+silently drop any flag added later. So no flag carries a literal. `env` merges
+by name, so one entry can be patched on its own:
+
+```yaml
+patches:
+  - patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: queryapi
+      spec:
+        template:
+          spec:
+            containers:
+              - name: queryapi
+                env:
+                  - name: STORAGE
+                    value: clickhouse
+```
+
+That changes exactly one line of the rendered output. The one flag this does
+not fully cover is `SECURE_PORT`: the `containerPort` and the Service's
+`targetPort` name the same listener, so patch all three or none.
+
+`CLICKHOUSE_*` (see [ClickHouse environment](#clickhouse-environment)) is read
+from the environment directly rather than through a flag, so it is already
+patchable the same way.
+
+### e2e and throwaway clusters
+
+[`config/queryapi-e2e/`](../config/queryapi-e2e/) is an overlay over
+`config/queryapi` for a cluster that has none of the above. It adds a
+self-signed CA, repoints the CSI volume at it (as a namespaced `Issuer`),
+repoints the APIService's CA injection at that CA's `Secret`, and opens the
+NetworkPolicy. `kustomize build config/queryapi-e2e` applies to an empty
+cluster and works.
+
+The CA is bootstrapped -- a selfSigned `Issuer` issues a CA `Certificate`,
+which backs a `ca` `Issuer` -- rather than being a selfSigned issuer used
+directly, because a selfSigned issuer leaves no CA object behind for the
+aggregator to trust. Going through a real CA means e2e verifies the backend
+exactly as production does, instead of setting `insecureSkipTLSVerify: true`
+and testing a path nobody ships. It is not for production: the CA is generated
+in-cluster and trusted by nothing else.
 
 ## Local development
 

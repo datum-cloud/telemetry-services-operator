@@ -119,8 +119,8 @@ func (o *Options) Validate() error {
 func (o *Options) Config(logger *slog.Logger, store storage.LogStore) (*ServerConfig, error) {
 	// With no --tls-cert-file the apiserver convention is to self-sign into
 	// --cert-dir. That is the local-development path only: in the cluster the
-	// serving certificate comes from cert-manager
-	// (config/queryapi/certificate.yaml) and the root filesystem is read-only,
+	// serving certificate comes from the cert-manager CSI driver
+	// (config/queryapi/deployment.yaml) and the root filesystem is read-only,
 	// so this branch cannot be taken there.
 	if err := o.Recommended.SecureServing.MaybeDefaultWithSelfSignedCerts(
 		"localhost", nil, []net.IP{net.ParseIP("127.0.0.1")}); err != nil {

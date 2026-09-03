@@ -2,7 +2,7 @@
 #
 # queryapi now terminates TLS and verifies the client certificate on the
 # connection against the front proxy's CA before it believes the X-Remote-*
-# identity a request carries (see certificate.yaml and deployment.yaml). A
+# identity a request carries (see deployment.yaml's serving-cert volume). A
 # client that reached this port without that certificate cannot authenticate,
 # so the headers are no longer trusted on the strength of who can dial us.
 #
