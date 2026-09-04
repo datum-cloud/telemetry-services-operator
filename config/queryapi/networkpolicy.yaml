@@ -1,8 +1,15 @@
-# queryapi trusts the identity headers on inbound requests, which is only
-# sound while the Milo proxy is the sole client -- it strips and re-sets
-# X-Remote-* from the identity it authenticated. This policy is what makes
-# that true. Verifying the requestheader client CA would remove the
-# dependence on network topology; until then, do not widen this.
+# Defence in depth, not the trust boundary.
+#
+# queryapi now terminates TLS and verifies the client certificate on the
+# connection against the front proxy's CA before it believes the X-Remote-*
+# identity a request carries (see deployment.yaml's serving-cert volume). A
+# client that reached this port without that certificate cannot authenticate,
+# so the headers are no longer trusted on the strength of who can dial us.
+#
+# This policy still earns its keep: it keeps unauthenticated traffic off the
+# listener entirely rather than letting it fail at the TLS handshake, and it is
+# the second gate if the requestheader configuration is ever wrong. Narrow it
+# further if you can; do not widen it.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -22,4 +29,4 @@ spec:
               kubernetes.io/metadata.name: PLACEHOLDER-milo-namespace
       ports:
         - protocol: TCP
-          port: 8080
+          port: 8443

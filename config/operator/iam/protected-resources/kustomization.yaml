@@ -7,3 +7,5 @@
 
 resources:
   - export-policy.yaml
+  - logs.yaml
+  - metrics.yaml

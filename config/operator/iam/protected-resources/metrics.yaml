@@ -1,0 +1,20 @@
+# The metric query surface. queryapi's Prometheus-shaped routes return 501
+# today; declaring the permissions now means the endpoints cannot ship
+# ungated. See queryapi/README.md.
+apiVersion: iam.miloapis.com/v1alpha1
+kind: ProtectedResource
+metadata:
+  name: o11y.miloapis.com-metrics
+spec:
+  serviceRef:
+    name: "o11y.miloapis.com"
+  kind: Metric
+  plural: metrics
+  singular: metric
+  permissions:
+    - query
+    - getLabels
+    - getSeries
+  parentResources:
+    - apiGroup: resourcemanager.miloapis.com
+      kind: Project

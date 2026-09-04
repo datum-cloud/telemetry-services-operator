@@ -11,15 +11,21 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"k8s.io/component-base/metrics/legacyregistry"
 )
 
+// The apiserver runtime owns /metrics and serves it from component-base's
+// registry rather than prometheus's default one, so queryapi's own metrics
+// have to be registered there or they are simply not scraped.
+var registry = promauto.With(legacyregistry.Registerer())
+
 var (
-	requestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+	requestsTotal = registry.NewCounterVec(prometheus.CounterOpts{
 		Name: "queryapi_http_requests_total",
 		Help: "Total HTTP requests handled, by route and status code.",
 	}, []string{"route", "code"})
 
-	requestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	requestDuration = registry.NewHistogramVec(prometheus.HistogramOpts{
 		Name:    "queryapi_http_request_duration_seconds",
 		Help:    "HTTP request latency in seconds, by route.",
 		Buckets: prometheus.DefBuckets,

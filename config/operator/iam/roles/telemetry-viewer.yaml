@@ -11,3 +11,11 @@ spec:
     - telemetry.miloapis.com/exportpolicies.list
     - telemetry.miloapis.com/exportpolicies.get
     - telemetry.miloapis.com/exportpolicies.watch
+    # Reading telemetry itself, gated per route by queryapi. query returns log
+    # lines or samples; the get* actions return only metadata about them.
+    - o11y.miloapis.com/logs.query
+    - o11y.miloapis.com/logs.getLabels
+    - o11y.miloapis.com/logs.getSeries
+    - o11y.miloapis.com/metrics.query
+    - o11y.miloapis.com/metrics.getLabels
+    - o11y.miloapis.com/metrics.getSeries

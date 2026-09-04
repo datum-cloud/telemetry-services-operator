@@ -7,27 +7,21 @@ import (
 	"net/http"
 	"time"
 
+	"k8s.io/apiserver/pkg/server/healthz"
+
 	"go.datum.net/o11y/queryapi/internal/storage"
 )
 
-// healthz reports process liveness and never depends on downstream state.
-func healthz(w http.ResponseWriter, _ *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte("ok"))
-}
-
-// readyz reports whether the storage backend is reachable.
-func readyz(store storage.LogStore, timeout time.Duration) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+// storageReady is queryapi's only addition to the framework's health surface.
+//
+// The apiserver runtime serves /healthz, /livez and /readyz itself, so there
+// is nothing to register a route for -- only a check to add. It goes on
+// /readyz alone: liveness must not depend on the storage backend, or an
+// outage that merely makes queries fail would restart the pod as well.
+func storageReady(store storage.LogStore, timeout time.Duration) healthz.HealthChecker {
+	return healthz.NamedCheck("storage", func(r *http.Request) error {
 		ctx, cancel := context.WithTimeout(r.Context(), timeout)
 		defer cancel()
-
-		if err := store.Ping(ctx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte("storage unavailable"))
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
-	}
+		return store.Ping(ctx)
+	})
 }

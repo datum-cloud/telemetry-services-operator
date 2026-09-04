@@ -6,10 +6,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
@@ -21,12 +21,22 @@ import (
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
 
+	"k8s.io/apiserver/pkg/authorization/authorizer"
+
 	"go.datum.net/o11y/queryapi"
 	"go.datum.net/o11y/queryapi/internal/logql"
 	"go.datum.net/o11y/queryapi/internal/miloauth"
 	"go.datum.net/o11y/queryapi/internal/storage"
 	"go.datum.net/o11y/queryapi/internal/storage/fake"
 )
+
+// discardLogger is the logger every test server is built with.
+func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+// specBase is a concrete instance of openapi.yaml's server template, which
+// kube-aggregator fills in at runtime. Route matching against the spec needs
+// one; the test server's own URL is not it.
+const specBase = "/projects/test-project/control-plane/apis/o11y.miloapis.com/v1alpha1"
 
 // loadSpec parses and validates openapi.yaml, then builds a router that maps
 // requests to the documented operations.
@@ -53,14 +63,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 	router := loadSpec(t)
 
 	cfg := queryapi.DefaultConfig()
-	cfg.TrustProjectHeader = true
-	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
-	defer srv.Close()
-
-	// The spec's server entry is a template kube-aggregator fills in at
-	// runtime (see openapi.yaml's `servers` block); route matching needs a
-	// concrete instance of it, not the test server's own URL.
-	const specBase = "/projects/test-project/control-plane/apis/o11y.miloapis.com/v1alpha1"
+	srv := serve(t, fake.New(2), cfg, allowAll())
 
 	cases := []struct {
 		name   string
@@ -89,7 +92,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			realURL := srv.URL + "/v1alpha1" + tc.path
+			realURL := srv.URL + prefix + tc.path
 			if tc.query != "" {
 				realURL += "?" + tc.query
 			}
@@ -105,7 +108,7 @@ func TestHandlersConformToSpec(t *testing.T) {
 			if tc.form != nil {
 				httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 			}
-			httpReq.Header.Set("X-Project-Id", "test-project")
+			forwardIdentity(httpReq)
 
 			resp, err := http.DefaultClient.Do(httpReq)
 			if err != nil {
@@ -157,12 +160,16 @@ func TestHandlersConformToSpec(t *testing.T) {
 	}
 }
 
-func TestUnscopedRequestIsUnauthorized(t *testing.T) {
-	cfg := queryapi.DefaultConfig()
-	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(2), cfg))
-	defer srv.Close()
+// TestAnonymousRequestIsNotServed pins what an unauthenticated caller gets.
+// The delegating authenticator admits system:anonymous rather than rejecting
+// it -- that is how the kubelet reaches /healthz -- so an anonymous query is
+// authenticated and then denied, which is a 403 rather than the 401 queryapi
+// used to answer before it ran on the apiserver runtime.
+func TestAnonymousRequestIsNotServed(t *testing.T) {
+	store := &recordingStore{}
+	srv := serve(t, store, queryapi.DefaultConfig(), allowAll())
 
-	resp, err := http.Get(srv.URL + "/v1alpha1/logs/loki/api/v1/query?query=%7Bservice_name%3D%22waf%22%7D")
+	resp, err := http.Get(srv.URL + prefix + "/logs/loki/api/v1/query?query=%7Bservice_name%3D%22waf%22%7D")
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -172,8 +179,11 @@ func TestUnscopedRequestIsUnauthorized(t *testing.T) {
 		}
 	}()
 
-	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", resp.StatusCode)
+	if resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", resp.StatusCode)
+	}
+	if got := store.seen(); got != "" {
+		t.Errorf("backend saw project %q, want none", got)
 	}
 }
 
@@ -182,17 +192,15 @@ func TestUnscopedRequestIsUnauthorized(t *testing.T) {
 // duplicates, and a missing selector is a 400.
 func TestSeriesUnionsSelectors(t *testing.T) {
 	cfg := queryapi.DefaultConfig()
-	cfg.TrustProjectHeader = true
-	srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), fake.New(20), cfg))
-	defer srv.Close()
+	srv := serve(t, fake.New(20), cfg, allowAll())
 
 	get := func(t *testing.T, query string) (int, []map[string]string) {
 		t.Helper()
-		req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1alpha1/logs/loki/api/v1/series?"+query, nil)
+		req, err := http.NewRequest(http.MethodGet, srv.URL+prefix+"/logs/loki/api/v1/series?"+query, nil)
 		if err != nil {
 			t.Fatalf("build request: %v", err)
 		}
-		req.Header.Set("X-Project-Id", "test-project")
+		forwardIdentity(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -311,31 +319,42 @@ func (i *oneRowIterator) Row() storage.Row { return i.row }
 func (i *oneRowIterator) Err() error       { return nil }
 func (i *oneRowIterator) Close() error     { return nil }
 
-// TestForwardedPathShapes covers the path shapes queryapi actually receives:
-// Milo's ProjectRouter strips /projects/.../control-plane and /apis/{group}
-// upstream, so only the remaining /v1alpha1 path or Grafana's bare /loki form routes;
-// stray proxy prefixes are not trusted. Project comes from user extras.
+// TestForwardedPathShapes covers every path shape queryapi is reached by.
+//
+// kube-aggregator forwards the path verbatim, so production sends
+// /apis/o11y.miloapis.com/v1alpha1/...; Grafana's Loki datasource sends a bare
+// /loki/api/v1/...; and /v1alpha1/... is the form this service assumed before
+// it served discovery. All three route to the same handler and are reviewed as
+// the same permission. Anything else is not rewritten and not served: a stray
+// /projects or /apis prefix is a caller's invention, not tenancy.
 func TestForwardedPathShapes(t *testing.T) {
 	cases := []struct {
 		name string
 		path string
 		want int // expected status code
 	}{
-		{"already trimmed", "/v1alpha1/logs/loki/api/v1/query_range", http.StatusOK},
+		{"aggregator form", prefix + "/logs/loki/api/v1/query_range", http.StatusOK},
 		{"bare loki form", "/loki/api/v1/query_range", http.StatusOK},
-		// Proxy prefixes are stripped upstream; a stray /apis or /projects
-		// prefix must NOT be rewritten or trusted here.
-		{"apis prefix not routed", "/apis/telemetry.miloapis.com/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound},
-		{"project prefix not routed",
-			"/projects/proj-abc/control-plane/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound},
+		{"versioned form", "/v1alpha1/logs/loki/api/v1/query_range", http.StatusOK},
+		// Not our group, and no rewriting will make it ours. These are 404s
+		// rather than 403s only because this test's reviewer allows
+		// everything: they are outside o11y.miloapis.com, so the guard passes
+		// them to Milo like any other path, and nothing serves them.
+		{
+			"another group is not routed",
+			"/apis/telemetry.miloapis.com/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound,
+		},
+		{
+			"project prefix not routed",
+			"/projects/proj-abc/control-plane/v1alpha1/logs/loki/api/v1/query_range", http.StatusNotFound,
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := &recordingStore{}
 			cfg := queryapi.DefaultConfig()
-			srv := httptest.NewServer(queryapi.NewHandler(slog.New(slog.DiscardHandler), store, cfg))
-			defer srv.Close()
+			srv := serve(t, store, cfg, allowAll())
 
 			req, err := http.NewRequest(http.MethodGet,
 				srv.URL+tc.path+`?query={service_name="waf"}&limit=5`, nil)
@@ -344,6 +363,7 @@ func TestForwardedPathShapes(t *testing.T) {
 			}
 			// Escaped extras keys, as kube-aggregator sets them. Assigned
 			// directly because Header.Set canonicalises.
+			req.Header.Set("X-Remote-User", "user@example.com")
 			req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-type"] = []string{"Project"}
 			req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-name"] = []string{"proj-abc"}
 
@@ -395,19 +415,16 @@ func TestForwardedPathShapes(t *testing.T) {
 // query works. Anything else metric-shaped must still be a 400.
 func TestGrafanaHealthProbe(t *testing.T) {
 	cfg := queryapi.DefaultConfig()
-	cfg.TrustProjectHeader = true
-	srv := httptest.NewServer(queryapi.NewHandler(
-		slog.New(slog.DiscardHandler), fake.New(2), cfg))
-	defer srv.Close()
+	srv := serve(t, fake.New(2), cfg, allowAll())
 
 	get := func(t *testing.T, query string) (int, string) {
 		t.Helper()
 		req, err := http.NewRequest(http.MethodGet,
-			srv.URL+"/v1alpha1/logs/loki/api/v1/query?query="+url.QueryEscape(query), nil)
+			srv.URL+prefix+"/logs/loki/api/v1/query?query="+url.QueryEscape(query), nil)
 		if err != nil {
 			t.Fatalf("build request: %v", err)
 		}
-		req.Header.Set("X-Project-Id", "test-project")
+		forwardIdentity(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -485,13 +502,11 @@ func TestGrafanaHealthProbe(t *testing.T) {
 // segment appearing later in the path is client-controlled data, and must
 // never become the project a query is scoped to.
 func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
-	const crafted = "/v1alpha1/logs/loki/api/v1/label/projects/evil-corp/control-plane/v1alpha1/logs/loki/api/v1/query"
+	const crafted = prefix + "/logs/loki/api/v1/label/projects/evil-corp/control-plane/v1alpha1/logs/loki/api/v1/query"
 
 	t.Run("no identity at all", func(t *testing.T) {
 		store := &recordingStore{}
-		srv := httptest.NewServer(queryapi.NewHandler(
-			slog.New(slog.DiscardHandler), store, queryapi.DefaultConfig()))
-		defer srv.Close()
+		srv := serve(t, store, queryapi.DefaultConfig(), allowAll())
 
 		resp, err := http.Get(srv.URL + crafted + `?query={service_name="waf"}&limit=1`)
 		if err != nil {
@@ -503,8 +518,10 @@ func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
 			}
 		}()
 
-		if resp.StatusCode != http.StatusUnauthorized {
-			t.Errorf("status = %d, want 401", resp.StatusCode)
+		// The path matches no route, so the request info resolver describes it
+		// as a non-resource request under our group and the guard denies it.
+		if resp.StatusCode != http.StatusForbidden {
+			t.Errorf("status = %d, want 403", resp.StatusCode)
 		}
 		if got := store.seen(); got != "" {
 			t.Errorf("backend saw project %q, want none", got)
@@ -513,17 +530,14 @@ func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
 
 	t.Run("identity present, crafted path ignored", func(t *testing.T) {
 		store := &recordingStore{}
-		srv := httptest.NewServer(queryapi.NewHandler(
-			slog.New(slog.DiscardHandler), store, queryapi.DefaultConfig()))
-		defer srv.Close()
+		srv := serve(t, store, queryapi.DefaultConfig(), allowAll())
 
 		req, err := http.NewRequest(http.MethodGet,
 			srv.URL+crafted+`?query={service_name="waf"}&limit=1`, nil)
 		if err != nil {
 			t.Fatalf("build request: %v", err)
 		}
-		req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-type"] = []string{"Project"}
-		req.Header["X-Remote-Extra-Iam.miloapis.com%2Fparent-name"] = []string{"proj-abc"}
+		forwardIdentity(req)
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -536,8 +550,8 @@ func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
 		}()
 
 		// The crafted path must never become the project. Identity comes only
-		// from the delegated X-Remote-Extra user extras; a 200 is served only
-		// scoped to proj-abc, and the backend must never see evil-corp.
+		// from the verified user extras; a 200 is served only scoped to
+		// proj-abc, and the backend must never see evil-corp.
 		if got := store.seen(); got == "evil-corp" {
 			t.Fatalf("backend saw project %q from a crafted path", got)
 		}
@@ -546,3 +560,117 @@ func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
 		}
 	})
 }
+
+// TestDiscoveryIsServed is the reason this service runs on the apiserver
+// runtime at all.
+//
+// kube-aggregator's availability controller probes GET
+// /apis/{group}/{version} on the backend with X-Remote-User
+// system:kube-aggregator in system:masters and requires a 2xx or 3xx; an
+// APIService that fails it is marked unavailable and never proxied to, so
+// without this document not one query would arrive. system:masters is what
+// carries the probe past authorization.
+func TestDiscoveryIsServed(t *testing.T) {
+	// A reviewer that denies everything, to prove the probe does not depend on
+	// one: the availability of the APIService must not turn on Milo's answer.
+	srv := serve(t, fake.New(2), queryapi.DefaultConfig(),
+		withAuthorizer(&stubAuthorizer{decision: authorizer.DecisionDeny}))
+
+	probe := func(r *http.Request) {
+		r.Header.Set("X-Remote-User", "system:kube-aggregator")
+		r.Header["X-Remote-Group"] = []string{"system:masters"}
+	}
+
+	t.Run("version discovery", func(t *testing.T) {
+		code, body := doBody(t, srv, http.MethodGet, prefix, probe)
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", code, body)
+		}
+
+		var list struct {
+			Kind         string `json:"kind"`
+			GroupVersion string `json:"groupVersion"`
+		}
+		if err := json.Unmarshal(body, &list); err != nil {
+			t.Fatalf("decode body: %v (body %s)", err, body)
+		}
+		if list.Kind != "APIResourceList" || list.GroupVersion != "o11y.miloapis.com/v1alpha1" {
+			t.Errorf("body = %+v, want an APIResourceList for o11y.miloapis.com/v1alpha1", list)
+		}
+	})
+
+	t.Run("group discovery", func(t *testing.T) {
+		code, body := doBody(t, srv, http.MethodGet, "/apis/o11y.miloapis.com", probe)
+		if code != http.StatusOK {
+			t.Fatalf("status = %d, want 200: %s", code, body)
+		}
+
+		var group struct {
+			Kind             string `json:"kind"`
+			Name             string `json:"name"`
+			PreferredVersion struct {
+				GroupVersion string `json:"groupVersion"`
+			} `json:"preferredVersion"`
+		}
+		if err := json.Unmarshal(body, &group); err != nil {
+			t.Fatalf("decode body: %v (body %s)", err, body)
+		}
+		if group.Kind != "APIGroup" || group.Name != "o11y.miloapis.com" ||
+			group.PreferredVersion.GroupVersion != "o11y.miloapis.com/v1alpha1" {
+			t.Errorf("body = %+v, want the o11y.miloapis.com APIGroup", group)
+		}
+	})
+
+	// Without the bypass, the same probe is reviewed like anything else.
+	t.Run("discovery is authorized for everyone else", func(t *testing.T) {
+		code, _ := doBody(t, srv, http.MethodGet, prefix, forwardIdentity)
+		if code != http.StatusForbidden {
+			t.Errorf("status = %d, want 403 for a caller outside system:masters", code)
+		}
+	})
+}
+
+// TestProbesAreServedWithoutAuthorization pins the other half of requirement
+// the kubelet depends on: /healthz, /readyz, /livez and /metrics answer for a
+// caller with no credentials at all, because --authorization-always-allow-paths
+// covers them. They are non-resource paths, and the path authorizer abstains
+// on every resource request, so nothing listed there can open a query route.
+func TestProbesAreServedWithoutAuthorization(t *testing.T) {
+	srv := serve(t, fake.New(2), queryapi.DefaultConfig(),
+		withAuthorizer(&stubAuthorizer{decision: authorizer.DecisionDeny}))
+
+	for _, path := range []string{"/healthz", "/livez", "/readyz", "/metrics"} {
+		code, body := doBody(t, srv, http.MethodGet, path, nil)
+		if code != http.StatusOK {
+			t.Errorf("%s: status = %d, want 200: %s", path, code, body)
+		}
+	}
+}
+
+// TestReadyzReportsStorageUnavailable pins that readiness follows the storage
+// backend and liveness does not: an outage that only makes queries fail must
+// take the pod out of service, not restart it.
+func TestReadyzReportsStorageUnavailable(t *testing.T) {
+	srv := serve(t, &unreachableStore{}, queryapi.DefaultConfig(), allowAll())
+
+	code, body := doBody(t, srv, http.MethodGet, "/readyz", nil)
+	if code != http.StatusInternalServerError {
+		t.Errorf("/readyz status = %d, want 500: %s", code, body)
+	}
+	if !strings.Contains(string(body), "[-]storage failed") {
+		t.Errorf("/readyz body = %s, want the storage check to be the one that failed", body)
+	}
+	if code, _ := doBody(t, srv, http.MethodGet, "/livez", nil); code != http.StatusOK {
+		t.Errorf("/livez status = %d, want 200", code)
+	}
+	if code, _ := doBody(t, srv, http.MethodGet, "/healthz", nil); code != http.StatusOK {
+		t.Errorf("/healthz status = %d, want 200", code)
+	}
+}
+
+// unreachableStore fails Ping so the readiness check actually fails.
+type unreachableStore struct{ recordingStore }
+
+func (*unreachableStore) Ping(context.Context) error { return errors.New("dial: connection refused") }
+
+var _ storage.LogStore = (*unreachableStore)(nil)

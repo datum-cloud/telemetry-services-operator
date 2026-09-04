@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-// Package queryapi implements the HTTP handlers for the telemetry query
-// layer's tenant-scoped log and metric query API. See openapi.yaml for the
-// contract.
+// Package queryapi implements the telemetry query layer's tenant-scoped log
+// and metric query API. It is served by the Kubernetes apiserver runtime (see
+// apiserver.go) but serves Loki- and Prometheus-shaped routes rather than
+// Kubernetes resources. See openapi.yaml for the contract and README.md for
+// how requests are authorized.
 package queryapi
 
 import (
@@ -14,82 +16,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"go.datum.net/o11y/queryapi/internal/logql"
-	"go.datum.net/o11y/queryapi/internal/miloauth"
 	"go.datum.net/o11y/queryapi/internal/storage"
 )
-
-// NewHandler wires the query API routes. Log endpoints mimic Loki's HTTP API,
-// metric endpoints Prometheus's. Probes and /metrics are left unwrapped.
-func NewHandler(logger *slog.Logger, store storage.LogStore, cfg Config) http.Handler {
-	h := &handler{logger: logger, store: store, cfg: cfg}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthz)
-	mux.HandleFunc("GET /readyz", readyz(store, cfg.QueryTimeout))
-	mux.Handle("GET /metrics", promhttp.Handler())
-
-	// /v1alpha1 matches the version segment after "apis/<o11yGroup>"
-	// (openapi.yaml's servers end in /v1alpha1). /logs and /metrics scope
-	// each signal to its own resource segment.
-	tenant := http.NewServeMux()
-	route(tenant, "GET /v1alpha1/logs/loki/api/v1/query", h.lokiQuery)
-	route(tenant, "GET /v1alpha1/logs/loki/api/v1/query_range", h.lokiQueryRange)
-	route(tenant, "GET /v1alpha1/logs/loki/api/v1/labels", h.lokiLabelNames)
-	route(tenant, "GET /v1alpha1/logs/loki/api/v1/label/{name}/values", h.lokiLabelValues)
-	route(tenant, "GET /v1alpha1/logs/loki/api/v1/series", h.lokiSeries)
-
-	// POST-only, form-encoded, matching Grafana's Prometheus datasource.
-	route(tenant, "POST /v1alpha1/metrics/api/v1/query", h.promQuery)
-	route(tenant, "POST /v1alpha1/metrics/api/v1/query_range", h.promQueryRange)
-	route(tenant, "GET /v1alpha1/metrics/api/v1/series", h.promSeries)
-	route(tenant, "GET /v1alpha1/metrics/api/v1/labels", h.promLabelNames)
-	route(tenant, "GET /v1alpha1/metrics/api/v1/label/{name}/values", h.promLabelValues)
-
-	mux.Handle("/", miloauth.Middleware(logger, cfg.TrustProjectHeader, stripProxyPrefixes(tenant)))
-	return mux
-}
-
-// stripProxyPrefixes rewrites Grafana's bare /loki/api/v1 form onto
-// /v1alpha1/logs. Milo's proxy chain has already consumed the /projects/...
-// and /apis/{group} prefixes.
-func stripProxyPrefixes(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := normalizePath(r.URL.Path)
-		if path == r.URL.Path {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		// Clone preserves the query string while rewriting the path.
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = path
-		r2.URL.RawPath = ""
-		next.ServeHTTP(w, r2)
-	})
-}
-
-// normalizePath rewrites a leading /loki/api/v1 to /v1alpha1/logs/loki/api/v1,
-// matching whole segments so an in-path lookalike (e.g. a label value) is
-// never touched.
-func normalizePath(path string) string {
-	segs := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	if len(segs) > 0 && segs[0] == "" {
-		// A bare "/" trims to a single empty segment.
-		segs = segs[1:]
-	}
-
-	if len(segs) >= 3 && segs[0] == "loki" && segs[1] == "api" && segs[2] == "v1" {
-		segs = append([]string{"v1alpha1", "logs"}, segs...)
-	}
-	return "/" + strings.Join(segs, "/")
-}
-
-func route(mux *http.ServeMux, pattern string, handler http.HandlerFunc) {
-	mux.Handle(pattern, traceRoute(pattern, instrumentRoute(pattern, handler)))
-}
 
 type handler struct {
 	logger *slog.Logger
