@@ -3,10 +3,16 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"github.com/nats-io/nkeys"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"sigs.k8s.io/yaml"
 )
 
@@ -218,4 +224,85 @@ func mustStrSlice(t *testing.T, m map[string]any, dir string) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+// updateResourceVersion runs fn against a fake dynamic client seeded with one
+// existing object at the given GVR/resourceVersion, and returns the
+// resourceVersion carried by the Update call fn triggers ("" if none was
+// issued). The fake ObjectTracker itself does not enforce resourceVersion
+// like a real API server does, so this inspects the outgoing Update object
+// directly rather than relying on the call succeeding or failing.
+func updateResourceVersion(t *testing.T, gvr schema.GroupVersionResource, listKind string, existing *unstructured.Unstructured, fn func(dyn *dynamicfake.FakeDynamicClient) error) string {
+	t.Helper()
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		gvr: listKind,
+	}, existing)
+
+	var gotRV string
+	dyn.PrependReactor("update", gvr.Resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
+		obj := action.(k8stesting.UpdateAction).GetObject().(*unstructured.Unstructured)
+		gotRV = obj.GetResourceVersion()
+		return false, nil, nil // let the fake tracker still handle it
+	})
+
+	if err := fn(dyn); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	return gotRV
+}
+
+// TestEnsurePushSecretUpdatesExisting guards against a regression where
+// ensurePushSecret discarded its Get result and issued an Update with no
+// resourceVersion, which a real API server rejects for every existing object.
+func TestEnsurePushSecretUpdatesExisting(t *testing.T) {
+	existing := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "external-secrets.io/v1alpha1",
+		"kind":       "PushSecret",
+		"metadata": map[string]any{
+			"name":            "nats-leaf-nkey-us-east-1",
+			"namespace":       "o11y-system",
+			"resourceVersion": "42",
+		},
+	}}
+
+	gotRV := updateResourceVersion(t, pushSecretsGVR, "PushSecretList", existing, func(dyn *dynamicfake.FakeDynamicClient) error {
+		g := &generator{dyn: dyn, cfg: config{
+			namespace:       "o11y-system",
+			secretStoreName: "gcp-secret-store",
+			secretStoreKind: "ClusterSecretStore",
+		}}
+		return g.ensurePushSecret(context.Background(), "us-east-1", "nats-leaf-nkey-us-east-1")
+	})
+
+	if gotRV != "42" {
+		t.Fatalf("Update carried resourceVersion %q, want %q (the fetched object's)", gotRV, "42")
+	}
+}
+
+// TestWriteConfigMapUpdatesExisting guards against the same missing-
+// resourceVersion regression in writeConfigMap's update path.
+func TestWriteConfigMapUpdatesExisting(t *testing.T) {
+	existing := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1",
+		"kind":       "ConfigMap",
+		"metadata": map[string]any{
+			"name":            "nats-o11y-authorized-leafs",
+			"namespace":       "o11y-system",
+			"resourceVersion": "42",
+		},
+	}}
+
+	users := append(staticUsers(), nkeyUser("us-east-1", "UD5ULF5HDXSAB42CKHYDGDQ5E53AJNSXYW72MEYMHNVGAQKNRZS55H5N"))
+	gotRV := updateResourceVersion(t, configMapsGVR, "ConfigMapList", existing, func(dyn *dynamicfake.FakeDynamicClient) error {
+		g := &generator{dyn: dyn, cfg: config{
+			namespace:     "o11y-system",
+			configMapName: "nats-o11y-authorized-leafs",
+			secretPrefix:  "nats-leaf-nkey",
+		}}
+		return g.writeConfigMap(context.Background(), users)
+	})
+
+	if gotRV != "42" {
+		t.Fatalf("Update carried resourceVersion %q, want %q (the fetched object's)", gotRV, "42")
+	}
 }
