@@ -118,6 +118,7 @@ spec:
               csi.cert-manager.io/issuer-name: PLACEHOLDER-issuer
               csi.cert-manager.io/issuer-kind: ClusterIssuer
               csi.cert-manager.io/common-name: edge-nats-server
+              csi.cert-manager.io/dns-names: nats.o11y-system.svc.cluster.local,nats.o11y-system.svc,nats
               csi.cert-manager.io/duration: "2160h"
               csi.cert-manager.io/renew-before: "360h"
               csi.cert-manager.io/key-usages: "server auth"
