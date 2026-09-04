@@ -13,6 +13,8 @@ jobs:
     strategy:
       matrix:
         include:
+          - module: config
+            test-cmd: go test ./...
           - module: operator
             test-cmd: task test
           - module: clickhouse-migrate
