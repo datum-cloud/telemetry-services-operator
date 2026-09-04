@@ -324,7 +324,8 @@ func (g *generator) ensurePushSecret(ctx context.Context, cluster, secretName st
 	}}
 
 	res := g.dyn.Resource(pushSecretsGVR).Namespace(g.cfg.namespace)
-	if _, err := res.Get(ctx, secretName, metav1.GetOptions{}); err == nil {
+	if existing, err := res.Get(ctx, secretName, metav1.GetOptions{}); err == nil {
+		obj.SetResourceVersion(existing.GetResourceVersion())
 		_, err := res.Update(ctx, obj, metav1.UpdateOptions{})
 		return err
 	} else if !apierrors.IsNotFound(err) {
@@ -448,7 +449,8 @@ func (g *generator) writeConfigMap(ctx context.Context, users []map[string]any) 
 	}}
 
 	res := g.dyn.Resource(configMapsGVR).Namespace(g.cfg.namespace)
-	if _, err := res.Get(ctx, g.cfg.configMapName, metav1.GetOptions{}); err == nil {
+	if existing, err := res.Get(ctx, g.cfg.configMapName, metav1.GetOptions{}); err == nil {
+		cm.SetResourceVersion(existing.GetResourceVersion())
 		_, err := res.Update(ctx, cm, metav1.UpdateOptions{})
 		return err
 	} else if !apierrors.IsNotFound(err) {
