@@ -3,8 +3,8 @@
 // Package queryapi implements the telemetry query layer's tenant-scoped log
 // and metric query API. It is served by the Kubernetes apiserver runtime (see
 // apiserver.go) but serves Loki- and Prometheus-shaped routes rather than
-// Kubernetes resources. See openapi.yaml for the contract and
-// docs/authorization.md for how requests are authorized.
+// Kubernetes resources. See openapi.yaml for the contract and README.md for
+// how requests are authorized.
 package queryapi
 
 import (

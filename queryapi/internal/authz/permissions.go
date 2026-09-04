@@ -3,7 +3,7 @@
 // Package authz holds the permission vocabulary queryapi's routes are
 // reviewed against, and the guard that keeps anything outside that vocabulary
 // from being reviewed at all. The SubjectAccessReview itself is the apiserver
-// framework's, addressed at Milo. See docs/authorization.md for the design.
+// framework's, addressed at Milo.
 package authz
 
 import (

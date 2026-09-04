@@ -1,6 +1,6 @@
 # The log query surface queryapi serves. These are not CRDs: nothing stores a
 # Log object, and the permissions below gate the Loki-shaped routes in
-# queryapi/routes.go. See queryapi/docs/authorization.md.
+# queryapi/routes.go. See queryapi/README.md.
 apiVersion: iam.miloapis.com/v1alpha1
 kind: ProtectedResource
 metadata:

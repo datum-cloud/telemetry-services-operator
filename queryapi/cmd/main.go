@@ -3,7 +3,7 @@
 // Command queryapi serves the telemetry query layer's API. It is a Kubernetes
 // aggregated API server that serves Loki- and Prometheus-shaped routes rather
 // than Kubernetes resources; see ../openapi.yaml for the request/response
-// contract and ../docs/authorization.md for how requests are authorized.
+// contract and ../README.md for how requests are authorized.
 package main
 
 import (

@@ -114,9 +114,7 @@ certificate, not password, matching `clickhouse-migrate`.
 ## Tenancy and authorization
 
 Every request is authenticated by the framework, then authorized by Milo. Both
-gates are Kubernetes APIs -- nothing here is a bespoke trust decision. See
-[`docs/authorization.md`](docs/authorization.md) for why the design is shaped
-this way.
+gates are Kubernetes APIs -- nothing here is a bespoke trust decision.
 
 ### Identity
 
@@ -211,7 +209,8 @@ before the APIService could ever be available.
 The cost is stated plainly: **anything the front proxy presents to queryapi as
 `system:masters` reads any project's telemetry without a review.** The front
 proxy's client certificate is what limits who can make that claim. Activity
-accepts the same bargain. See [`docs/authorization.md`](docs/authorization.md).
+accepts the same bargain, as does every aggregated API server built on
+`RecommendedOptions`.
 
 ### Defence in depth
 

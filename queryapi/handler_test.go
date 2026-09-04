@@ -569,7 +569,7 @@ func TestCraftedProjectPathIsNotAnIdentity(t *testing.T) {
 // system:kube-aggregator in system:masters and requires a 2xx or 3xx; an
 // APIService that fails it is marked unavailable and never proxied to, so
 // without this document not one query would arrive. system:masters is what
-// carries the probe past authorization -- see docs/authorization.md.
+// carries the probe past authorization.
 func TestDiscoveryIsServed(t *testing.T) {
 	// A reviewer that denies everything, to prove the probe does not depend on
 	// one: the availability of the APIService must not turn on Milo's answer.
