@@ -46,6 +46,72 @@ func TestServerAuthCertsHaveDNSNames(t *testing.T) {
 	}
 }
 
+// TestNATSSubjectsArePoPScoped guards the edge collectors' publish subjects
+// against the hub's per-PoP leaf grant, which allows only
+// o11y.<signal>.<cluster>.* -- a leaf publish outside it is dropped by the
+// edge with no error on either side, so the whole path looks healthy while
+// nothing crosses. See milo-os/telemetry#146 for the grant.
+func TestNATSSubjectsArePoPScoped(t *testing.T) {
+	collectors := map[string]bool{
+		"collectors/node-agent-collector.yaml": true,
+		"collectors/gateway-collector.yaml":    true,
+	}
+	for path := range collectors {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		var doc struct {
+			Spec struct {
+				Config struct {
+					Processors map[string]struct {
+						LogStatements []struct {
+							Statements []string `yaml:"statements"`
+						} `yaml:"log_statements"`
+					} `yaml:"processors"`
+					Exporters struct {
+						NATS struct {
+							Logs struct {
+								Subject string `yaml:"subject"`
+							} `yaml:"logs"`
+						} `yaml:"nats"`
+					} `yaml:"exporters"`
+				} `yaml:"config"`
+			} `yaml:"spec"`
+		}
+		if err := yaml.Unmarshal(raw, &doc); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+
+		// The attribute the nats exporter routes on must carry the cluster
+		// token between the signal and the project.
+		var subjectStmt string
+		for _, proc := range doc.Spec.Config.Processors {
+			for _, block := range proc.LogStatements {
+				for _, stmt := range block.Statements {
+					if strings.Contains(stmt, `"telemetry.subject"`) {
+						subjectStmt = stmt
+					}
+				}
+			}
+		}
+		if subjectStmt == "" {
+			t.Errorf("%s: no statement sets telemetry.subject", path)
+			continue
+		}
+		if !strings.Contains(subjectStmt, `resource.attributes["k8s.cluster.name"]`) {
+			t.Errorf("%s: telemetry.subject omits the cluster token, so the hub's per-PoP grant silently drops it: %s",
+				path, subjectStmt)
+		}
+
+		// The static fallback has to satisfy the same grant.
+		if got := doc.Spec.Config.Exporters.NATS.Logs.Subject; !strings.Contains(got, "${cluster}") {
+			t.Errorf("%s: nats exporter fallback subject %q omits the cluster token", path, got)
+		}
+	}
+}
+
 func checkCSIVolumes(t *testing.T, path string, node any) {
 	switch v := node.(type) {
 	case map[string]any:
