@@ -163,8 +163,11 @@ spec:
               - >-
                 set(resource.attributes["milo.project.id"], "internal")
                 where resource.attributes["milo.project.id"] == nil
+              # PoP token is required: the hub grants this leaf's NKey only
+              # o11y.logs.<cluster>.*, and denied publishes are dropped silently.
               - >-
-                set(resource.attributes["telemetry.subject"], Concat(["o11y.logs.", resource.attributes["milo.project.id"]], ""))
+                set(resource.attributes["telemetry.subject"],
+                Concat(["o11y.logs.", resource.attributes["k8s.cluster.name"], ".", resource.attributes["milo.project.id"]], ""))
 
       batch:
         timeout: 10s
@@ -187,7 +190,8 @@ spec:
           cert_file: /etc/otel/nats-client/tls.crt
           key_file: /etc/otel/nats-client/tls.key
         logs:
-          subject: o11y.logs.internal
+          # Fallback only; must match the leaf's grant like the attribute does.
+          subject: o11y.logs.${cluster}.internal
           encoding: otlp_proto
 
       debug:
