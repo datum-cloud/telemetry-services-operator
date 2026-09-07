@@ -14,12 +14,12 @@ spec:
     metrics:
       enableMetrics: true
   hostNetwork: false
-  # Pod logs are 0640 root:root, so group 0 is what makes them readable
-  # without running as root.
+  # 65532 reads the CSI cert, group 0 the 0640 root:root pod logs.
   podSecurityContext:
     runAsNonRoot: true
     runAsUser: 1000
-    runAsGroup: 0
+    runAsGroup: 65532
+    supplementalGroups: [0]
     seccompProfile:
       type: RuntimeDefault
   securityContext:
@@ -27,13 +27,16 @@ spec:
     readOnlyRootFilesystem: true
     capabilities:
       drop: ["ALL"]
-  # Virtual-kubelet-backed nodes (e.g. Unikraft's kraftlet agents) tolerate
-  # everything via the toleration below but can't pull normal OCI images --
-  # same nodeSelector node-exporter already uses to skip them.
   nodeSelector:
     kubernetes.io/os: linux
+  # Not "Exists" -- that overrides virtual-kubelet.io/provider.
   tolerations:
-    - operator: Exists
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: compute.datumapis.com/runtime
+      operator: Exists
+      effect: NoSchedule
   volumes:
     - name: varlogpods
       hostPath:
