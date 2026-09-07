@@ -14,6 +14,19 @@ spec:
     metrics:
       enableMetrics: true
   hostNetwork: false
+  # Pod logs are 0640 root:root, so group 0 is what makes them readable
+  # without running as root.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 0
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop: ["ALL"]
   # Virtual-kubelet-backed nodes (e.g. Unikraft's kraftlet agents) tolerate
   # everything via the toleration below but can't pull normal OCI images --
   # same nodeSelector node-exporter already uses to skip them.
